@@ -20,7 +20,7 @@ Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform
 **macOS 26.3.1, Apple Silicon (arm64)**, set up 2026-06-01.
 
 - SAW: **v1.5.1** (2026-05-22), asset `saw-1.5.1-macos-15-ARM64-with-solvers.tar.gz`.
-- Cryptol: bundled inside the SAW 1.5.1 tarball (used in-place to avoid version skew).
+- Cryptol: **3.5.0** (git 6173b60), bundled inside the SAW 1.5.1 tarball (used in-place to avoid skew).
 - cryptol-to-isabelle: bundled standalone in the SAW 1.5.1 tarball (first release to ship it).
 - Isabelle: **Isabelle2025-2** (Jan 2026), asset `Isabelle2025-2_macos.tar.gz` (universal bundle,
   upstream lists macOS 26 / Apple Silicon support).
@@ -32,9 +32,11 @@ Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform
 - **SAW binary built for macOS 15, run on macOS 26.** No arm64 macOS-26-specific SAW build exists
   upstream; the macOS-15 arm64 build is what we run. Flagged here for honesty; gated on `saw --version`
   actually running before we depend on it.
-- **Apple Silicon code-signing.** Galois release binaries are unsigned; macOS arm64 refuses to exec
-  unsigned binaries. `setup.sh` ad-hoc re-signs them (`codesign --force --sign -`). This does not
-  alter behavior, only satisfies the loader.
+- **Apple Silicon Gatekeeper.** On macOS arm64 a downloaded binary that is only ad-hoc signed and
+  still carries the `com.apple.quarantine` xattr is SIGKILLed on exec ("Killed: 9"). `setup.sh`
+  strips quarantine (`xattr -dr com.apple.quarantine`) and ad-hoc re-signs the Mach-O binaries
+  (`codesign --force --sign -`). Neither alters behavior; they only satisfy the loader. Verified:
+  `saw --version` → `1.5.1`, `cryptol --version` → `3.5.0` after this step.
 - **Apple clang, not mainline LLVM/clang.** We emit LLVM bitcode for SAW with the system Apple clang
   (17.0.0). Apple's clang can emit a bitcode/IR version that differs from mainline; if SAW's LLVM
   parser rejects it, the documented fallback is a pinned mainline `clang`. Part of the trust base

@@ -56,10 +56,15 @@ for b in saw cryptol cryptol-to-isabelle abc z3 yices yices-smt2 cvc4 cvc5; do
   [[ -e "$SAW_HOME/bin/$b" ]] && link "$SAW_HOME/bin/$b" "$b"
 done
 
-# macOS arm64 requires every binary to carry at least an ad-hoc signature, or the
-# kernel kills it on exec. Galois tarballs are unsigned, so ad-hoc re-sign in place.
+# macOS arm64 gotchas, both of which cause a silent "Killed: 9" on exec:
+#   (1) downloaded files carry com.apple.quarantine; an ad-hoc-signed (non-notarized)
+#       binary that is quarantined is SIGKILLed by Gatekeeper. Strip it.
+#   (2) every arm64 binary must carry at least an ad-hoc signature. Galois tarballs are
+#       signed ad-hoc already, but re-sign defensively in case extraction altered them.
+xattr -dr com.apple.quarantine "$SAW_HOME" 2>/dev/null || true
 if command -v codesign >/dev/null; then
-  find "$SAW_HOME/bin" -type f -perm +111 -exec codesign --force --sign - {} \; 2>/dev/null || true
+  find "$SAW_HOME/bin" -type f -exec sh -c 'file "$1" | grep -q Mach-O' _ {} \; \
+    -exec codesign --force --sign - {} \; 2>/dev/null || true
 fi
 
 # --- Isabelle ---------------------------------------------------------------
@@ -71,6 +76,7 @@ if [[ ! -x "$ISA_HOME/bin/isabelle" ]] && [[ -z "$(find "$ISA_HOME" -name isabel
   # macOS tarball unpacks to an .app bundle; --strip-components flattens it to ISA_HOME.
   tar -xzf "$DL_DIR/$ISA_ASSET" -C "$ISA_HOME" --strip-components=1
 fi
+xattr -dr com.apple.quarantine "$ISA_HOME" 2>/dev/null || true
 # The CLI launcher lives at <app>/bin/isabelle (or Contents/Resources/.../bin/isabelle).
 ISA_BIN="$(find "$ISA_HOME" -type f -name isabelle -path '*/bin/*' | head -1 || true)"
 [[ -n "$ISA_BIN" ]] && link "$ISA_BIN" "isabelle"

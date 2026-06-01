@@ -11,9 +11,26 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   formalization) faithfully captures the standard. Provenance noted in spec/README.md.
 
 ## Scope limits (v1)
-- Only the forward NTT and its modular-reduction primitives.
-- Input ranges actually checked: <FILL IN — e.g. coefficients in the canonical range>.
+- **This session proves nothing about the forward NTT.** Scope is the single primitive
+  `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce` (`int32_t(int64_t)`) from target/pqclean/reduce.c —
+  the reduction the NTT relies on. The other reduce.c functions (reduce32, caddq, freeze) and the
+  NTT itself are NOT modeled or proven yet.
+- Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof
+  (checkpoint 4) will be discharged under this precondition; equivalence outside it is NOT claimed
+  by the proof. (Empirically the Cryptol model is a bit-exact transcription that also matches the C
+  outside the range, but that is not what SAW will assert.)
 - Anything not listed as proven is, explicitly, NOT proven.
+
+## Modeling choices for `montgomery_reduce` (model/cryptol/MLDSA_NTT.cry)
+- Modeled at the **exact C bit widths** (`[64] -> [32]`), not over idealized `Integer`, because SAW
+  checks bit-for-bit equivalence and the algorithm depends on two's-complement truncation/shift.
+- `*` on `[n]` = multiply mod 2^n → matches C's wrapping `(uint64_t)` product and low bits of
+  `(int64_t)t * Q`. `drop`{32}` = keep low 32 bits → matches the `(int32_t)` casts and the final
+  int64→int32 assignment. `>>$` = ARITHMETIC right shift → matches `>> 32` on a signed `int64_t`
+  (plain logical `>>` would be wrong here).
+- **Status: UNVERIFIED equivalence.** Sanity-checked on 16 concrete vectors (C-compiled-and-run vs
+  Cryptol-evaluated) — all agreed bit-for-bit on 2026-06-01 — but this is NOT a proof. Only SAW
+  `make saw` exiting 0 establishes C ≡ model for all in-range inputs.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

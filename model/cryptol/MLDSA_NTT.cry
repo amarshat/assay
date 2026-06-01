@@ -1,23 +1,60 @@
-// Cryptol model of the ML-DSA forward NTT + modular reduction.
+// Cryptol model of the ML-DSA (ML-DSA-44) modular-reduction primitive.
 //
-// STATUS: SCAFFOLD / UNVERIFIED. These are skeletons to be filled in and then checked against
-// the actual C by SAW (proof/saw/mldsa_ntt.saw). Do not treat as correct until SAW passes.
+// SCOPE (v1, this session): the forward NTT is NOT modeled yet. We model only
+// `montgomery_reduce`, the reduction the forward NTT relies on, to be checked bit-for-bit
+// against the vendored PQClean C by SAW (proof/saw/mldsa_ntt.saw).
 //
-// FIPS 204 parameters (CONFIRM against the standard before relying on these):
-//   q (modulus), n (ring degree). Fill in exact values.
+// STATUS until SAW passes: UNVERIFIED equivalence. Loading/typechecking this module proves
+// nothing about the C — only SAW (`make saw`, exit 0) establishes C ≡ this model.
+//
+// Target C (target/pqclean/reduce.c @ PQClean 202a8f9, ml-dsa-44/clean):
+//
+//   int32_t montgomery_reduce(int64_t a) {
+//       int32_t t;
+//       t = (int32_t)((uint64_t)a * (uint64_t)QINV);   // QINV = 58728449
+//       t = (a - (int64_t)t * Q) >> 32;                // Q = 8380417, arithmetic (signed) >>
+//       return t;
+//   }
+//
+// FIPS 204 parameters (ML-DSA): Q = 8380417, N = 256.
 
 module MLDSA_NTT where
 
-type N = 256          // TODO: confirm against FIPS 204
+type N = 256
 q : Integer
-q = 8380417           // TODO: confirm ML-DSA modulus
+q = 8380417
 
-// Montgomery / Barrett style reduction — model to MATCH the target C's reduction, then let
-// SAW prove the C implements exactly this.
-reduce : Integer -> Integer
-reduce x = error "TODO: model the target C reduction; verify with SAW"
+// --- constants, at the exact C widths -------------------------------------------------
+//   Q    : the ML-DSA prime modulus (params.h)
+//   QINV : q^{-1} mod 2^32 (reduce.h). Both are positive and small, so the width-64
+//   literals below coincide with the C zero-extended `(uint64_t)QINV` and `Q`.
+Q64 : [64]
+Q64 = 8380417
 
-// Forward NTT over the polynomial ring. Model the algorithm as the C computes it (butterflies,
-// zeta table, in-place updates), so SAW can establish C ≡ this model.
+QINV : [64]
+QINV = 58728449
+
+// Sign-extend a 32-bit two's-complement value to 64 bits, modeling C's `(int64_t)t`.
+// Bit 0 is the most-significant (sign) bit in Cryptol's bit ordering.
+sext64 : [32] -> [64]
+sext64 x = (if x @ 0 then ~zero else zero : [32]) # x
+
+// --- the model -------------------------------------------------------------------------
+// Bit-exact transcription of the C. Each step is annotated with the C line it mirrors:
+//   * `*` on [n] is multiplication mod 2^n  -> matches C's wrapping (uint64_t) product and
+//     the low bits of (int64_t)t * Q;
+//   * `drop`{32}` keeps the least-significant 32 bits -> matches the (int32_t) truncating casts
+//     and the final assignment of an int64_t expression into the int32_t result;
+//   * `>>$` is the ARITHMETIC (sign-propagating) right shift -> matches `>> 32` on a signed
+//     int64_t (`>>` here would be the wrong, logical shift).
+montgomery_reduce : [64] -> [32]
+montgomery_reduce a = drop`{32} ((a - sext64 t * Q64) >>$ 32)
+  where
+    // t = (int32_t)((uint64_t)a * (uint64_t)QINV)
+    t : [32]
+    t = drop`{32} (a * QINV)
+
+// --- out of scope (v1): forward NTT ----------------------------------------------------
+// Deliberately not modeled this session; do not rely on it. Kept as a typed placeholder.
 ntt : [N]Integer -> [N]Integer
-ntt coeffs = error "TODO: model forward NTT; verify with SAW"
+ntt coeffs = error "out of scope for v1: forward NTT not modeled yet"

@@ -25,11 +25,12 @@ against an exact, unmodifiable snapshot.
 - Commit hash: `202a8f96315f9ed219387a50f7e40d04af037ea8` (committed 2026-05-14)
 - Path within repo: `crypto_sign/ml-dsa-44/clean/`
 - Date identified: 2026-06-01
-- Date vendored: **NOT YET — no source has been copied into this repo pending human confirmation.**
-- Files in the compile closure for `reduce.c` (the exact set we will vendor):
-  - `reduce.c`  (the primitives)
-  - `reduce.h`  (prototypes + `MONT = -4186625`, `QINV = 58728449`)
-  - `params.h`  (defines `Q = 8380417`, `N = 256`; self-contained, no further includes)
+- Date vendored: 2026-06-01 (into `target/pqclean/`, verbatim from the pinned commit)
+- Files vendored (the exact compile closure for `reduce.c`), with SHA-256 for integrity:
+  - `reduce.c`  (the primitives) — `8f57fd817a50d4e9d0e6f719da352ad503ac0bacf76ea492a7f3885520857af9`
+  - `reduce.h`  (prototypes + `MONT = -4186625`, `QINV = 58728449`) — `c56a083ce9ea4da55a17e9c2f2da74e7277cdede5b2f8e758e441ff9e0813863`
+  - `params.h`  (defines `Q = 8380417`, `N = 256`; self-contained, no further includes) — `0210251cea61d26e49b2dad16c4ed86d65474fbffa54c61af7a22c677ddd3cd2`
+  - `LICENSE`   (CC0 dedication, kept alongside) — `5d7798eec4d8c8ef0a72dfe805ec54dfd7b212d3928bf9695fda4095d22829ab`
 - License of vendored code: **Public Domain (CC0)** — per the per-directory `LICENSE`:
   > Public Domain (https://creativecommons.org/share-your-work/public-domain/cc0/)
   `reduce.c`/`reduce.h`/`params.h` carry no per-file copyright header. The LICENSE's Keccak/AES

@@ -1,0 +1,6 @@
+session Assay = HOL +
+  description \<open>Equivalence of a deployed ML-DSA NTT subroutine with its FIPS-204 specification.\<close>
+  options [document = false]
+  theories
+    MLDSA_NTT_Spec
+    Assay_Equivalence

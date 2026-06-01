@@ -1,0 +1,24 @@
+name: verify
+on:
+  push:
+  pull_request:
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up toolchain
+        run: ./scripts/setup.sh
+
+      # Reject proof holes: no `sorry` may reach a verified claim.
+      - name: No sorry in Isabelle proofs
+        run: |
+          if grep -rn --include='*.thy' '\bsorry\b' spec/; then
+            echo "::error::Found 'sorry' (proof hole) — not a verified proof."
+            exit 1
+          fi
+
+      - name: Run pipeline
+        run: make verify

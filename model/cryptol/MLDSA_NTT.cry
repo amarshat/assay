@@ -1,0 +1,23 @@
+// Cryptol model of the ML-DSA forward NTT + modular reduction.
+//
+// STATUS: SCAFFOLD / UNVERIFIED. These are skeletons to be filled in and then checked against
+// the actual C by SAW (proof/saw/mldsa_ntt.saw). Do not treat as correct until SAW passes.
+//
+// FIPS 204 parameters (CONFIRM against the standard before relying on these):
+//   q (modulus), n (ring degree). Fill in exact values.
+
+module MLDSA_NTT where
+
+type N = 256          // TODO: confirm against FIPS 204
+q : Integer
+q = 8380417           // TODO: confirm ML-DSA modulus
+
+// Montgomery / Barrett style reduction — model to MATCH the target C's reduction, then let
+// SAW prove the C implements exactly this.
+reduce : Integer -> Integer
+reduce x = error "TODO: model the target C reduction; verify with SAW"
+
+// Forward NTT over the polynomial ring. Model the algorithm as the C computes it (butterflies,
+// zeta table, in-place updates), so SAW can establish C ≡ this model.
+ntt : [N]Integer -> [N]Integer
+ntt coeffs = error "TODO: model forward NTT; verify with SAW"

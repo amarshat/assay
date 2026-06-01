@@ -1,0 +1,33 @@
+// SAW: prove the target C subroutine implements the Cryptol model.
+//
+// STATUS: SCAFFOLD / UNVERIFIED. Adapt every call below to the CURRENT SAW API — names and
+// signatures change between releases; check the SAW manual for the version you pinned.
+// This file must exit 0 only when the proof genuinely checks.
+
+enable_experimental;
+
+// Load the LLVM bitcode built from the vendored C (see scripts/build_bitcode.sh).
+m <- llvm_load_module "build/mldsa_ntt.bc";
+
+// Import the Cryptol model.
+import "model/cryptol/MLDSA_NTT.cry";
+
+// --- spec for the reduction primitive ---
+let reduce_spec = do {
+    // TODO: declare inputs, precondition on ranges (record them in docs/ASSUMPTIONS.md),
+    //       call the C function, and assert the result equals `reduce` from the Cryptol model.
+    crucible_execute_func [];
+};
+
+// --- spec for the NTT ---
+let ntt_spec = do {
+    // TODO: set up the coefficient array, precondition input ranges, run the C `ntt`,
+    //       assert output equals `ntt` from the Cryptol model.
+    crucible_execute_func [];
+};
+
+// Discharge. These must actually verify — a failing proof must fail this script.
+// reduce_ov <- llvm_verify m "<c_reduce_symbol>" [] true reduce_spec z3;
+// ntt_ov    <- llvm_verify m "<c_ntt_symbol>" [reduce_ov] true ntt_spec z3;
+
+print "TODO: wire up llvm_verify calls; remove this line once real proofs run.";

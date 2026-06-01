@@ -1,0 +1,25 @@
+# Build artifacts
+*.bc
+*.ll
+*.o
+*.out
+
+# Isabelle
+*.thy~
+.isabelle/
+output/
+heaps/
+browser_info/
+
+# SAW
+*.saw-cache/
+saw-out/
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Local toolchain
+/.tools/

@@ -15,10 +15,10 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce` (`int32_t(int64_t)`) from target/pqclean/reduce.c —
   the reduction the NTT relies on. The other reduce.c functions (reduce32, caddq, freeze) and the
   NTT itself are NOT modeled or proven yet.
-- Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof
-  (checkpoint 4) will be discharged under this precondition; equivalence outside it is NOT claimed
-  by the proof. (Empirically the Cryptol model is a bit-exact transcription that also matches the C
-  outside the range, but that is not what SAW will assert.)
+- Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof IS
+  discharged under exactly this precondition (`mont_in_range` in the model); equivalence outside it
+  is NOT claimed by the proof. (Empirically the Cryptol model is a bit-exact transcription that also
+  matches the C outside the range, but that is not what SAW asserts.)
 - Anything not listed as proven is, explicitly, NOT proven.
 
 ## Modeling choices for `montgomery_reduce` (model/cryptol/MLDSA_NTT.cry)
@@ -28,9 +28,21 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   `(int64_t)t * Q`. `drop`{32}` = keep low 32 bits → matches the `(int32_t)` casts and the final
   int64→int32 assignment. `>>$` = ARITHMETIC right shift → matches `>> 32` on a signed `int64_t`
   (plain logical `>>` would be wrong here).
-- **Status: UNVERIFIED equivalence.** Sanity-checked on 16 concrete vectors (C-compiled-and-run vs
-  Cryptol-evaluated) — all agreed bit-for-bit on 2026-06-01 — but this is NOT a proof. Only SAW
-  `make saw` exiting 0 establishes C ≡ model for all in-range inputs.
+## Proof results (what a tool actually checked, and when)
+- **C ≡ Cryptol for `montgomery_reduce`: VERIFIED.** `make saw` exits 0 on 2026-06-06.
+  - Tool: SAW v1.5.1, solver Z3 (bundled). Bitcode: Apple clang 17 `-O0 -g`, `build/mldsa_ntt.bc`.
+  - Claim discharged: `∀ a:[64]. mont_in_range a ⇒ C(a) == montgomery_reduce(a)`, i.e. the C function
+    `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce` returns exactly the model's value for every input in
+    `-2^31*Q ≤ a ≤ Q*2^31`. Nothing outside that range is claimed.
+  - SAW output: `Proof succeeded! PQCLEAN_MLDSA44_CLEAN_montgomery_reduce`.
+  - **Non-vacuity checked.** A control run with a deliberately wrong model (`result + 1`) made SAW
+    fail with counterexample `a = 0`, confirming the precondition is satisfiable and the equality
+    postcondition is really being asserted. (An earlier control swapping `>>$`→`>>` correctly still
+    passed — for this function the shift-by-32-then-truncate makes arithmetic/logical shift
+    equivalent, so it is not a behavioral change.)
+- The earlier 16-vector C-vs-Cryptol concrete cross-check (2026-06-01) remains as a secondary
+  sanity check; the SAW proof above supersedes it for all in-range inputs.
+- **NOT yet proven:** model ≡ FIPS-204 spec (Isabelle leg), reduce32/caddq/freeze, the forward NTT.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

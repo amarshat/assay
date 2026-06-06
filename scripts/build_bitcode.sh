@@ -1,18 +1,23 @@
 #!/usr/bin/env bash
 # Compile the vendored target C subroutine to LLVM bitcode for SAW.
 # Usage: ./scripts/build_bitcode.sh <target_dir> <out.bc>
+#
+# v1 scope: only reduce.c is needed (it contains montgomery_reduce). Its compile closure is
+# reduce.c + reduce.h + params.h, all in <target_dir>. We compile at -O0 with debug info so the
+# source structure SAW reasons about is preserved.
 set -euo pipefail
 
 TARGET_DIR="${1:?need target dir}"
 OUT="${2:?need output .bc path}"
 mkdir -p "$(dirname "$OUT")"
 
-# Emit bitcode without optimizations that would obscure the source structure SAW reasons about.
-# Adjust the file list to the exact subroutine files you vendored.
-# Example shape (edit symbol/files):
-#   clang -c -emit-llvm -O0 -g \
-#     "$TARGET_DIR"/ntt.c "$TARGET_DIR"/reduce.c \
-#     -o "$OUT"
+CLANG="${CLANG:-clang}"
 
-echo "TODO: set the clang invocation for your vendored files, then remove this line."
-echo "would build bitcode from $TARGET_DIR into $OUT"
+set -x
+"$CLANG" -c -emit-llvm -O0 -g \
+  -I "$TARGET_DIR" \
+  "$TARGET_DIR/reduce.c" \
+  -o "$OUT"
+set +x
+
+echo ">> built bitcode: $OUT"

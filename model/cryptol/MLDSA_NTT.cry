@@ -4,8 +4,9 @@
 // `montgomery_reduce`, the reduction the forward NTT relies on, to be checked bit-for-bit
 // against the vendored PQClean C by SAW (proof/saw/mldsa_ntt.saw).
 //
-// STATUS until SAW passes: UNVERIFIED equivalence. Loading/typechecking this module proves
-// nothing about the C — only SAW (`make saw`, exit 0) establishes C ≡ this model.
+// STATUS: `montgomery_reduce` is SAW-VERIFIED equivalent to the C (make saw exits 0, 2026-06-06,
+// under the mont_in_range precondition). See docs/ASSUMPTIONS.md "Proof results". Typechecking
+// this module alone proves nothing — the SAW run is what establishes C ≡ this model.
 //
 // Target C (target/pqclean/reduce.c @ PQClean 202a8f9, ml-dsa-44/clean):
 //
@@ -53,6 +54,14 @@ montgomery_reduce a = drop`{32} ((a - sext64 t * Q64) >>$ 32)
     // t = (int32_t)((uint64_t)a * (uint64_t)QINV)
     t : [32]
     t = drop`{32} (a * QINV)
+
+// Documented input precondition from reduce.c: -2^31 * Q <= a <= Q * 2^31 (signed).
+// The SAW proof (proof/saw/mldsa_ntt.saw) discharges equivalence under this predicate.
+mont_in_range : [64] -> Bit
+mont_in_range a = (a >=$ lo) && (a <=$ hi)
+  where
+    hi = (2 : [64]) ^^ 31 * Q64
+    lo = - hi
 
 // --- out of scope (v1): forward NTT ----------------------------------------------------
 // Deliberately not modeled this session; do not rely on it. Kept as a typed placeholder.

@@ -1,33 +1,30 @@
-// SAW: prove the target C subroutine implements the Cryptol model.
+// SAW proof: the vendored PQClean C `montgomery_reduce` implements the Cryptol model,
+// bit-for-bit, for all inputs in the documented precondition.
 //
-// STATUS: SCAFFOLD / UNVERIFIED. Adapt every call below to the CURRENT SAW API — names and
-// signatures change between releases; check the SAW manual for the version you pinned.
-// This file must exit 0 only when the proof genuinely checks.
+// SCOPE (v1, this session): montgomery_reduce ONLY. The other reduce.c functions and the
+// forward NTT are out of scope and intentionally not proven here.
+//
+// Paths are relative to THIS script's directory (SAW resolves load/import that way):
+//   ../../build/mldsa_ntt.bc            <- built by scripts/build_bitcode.sh from target/pqclean
+//   ../../model/cryptol/MLDSA_NTT.cry   <- the hand-written model (checkpoint 3)
+//
+// This script must exit 0 ONLY when llvm_verify genuinely discharges the proof.
 
 enable_experimental;
 
-// Load the LLVM bitcode built from the vendored C (see scripts/build_bitcode.sh).
-m <- llvm_load_module "build/mldsa_ntt.bc";
+m <- llvm_load_module "../../build/mldsa_ntt.bc";
+import "../../model/cryptol/MLDSA_NTT.cry";
 
-// Import the Cryptol model.
-import "model/cryptol/MLDSA_NTT.cry";
-
-// --- spec for the reduction primitive ---
-let reduce_spec = do {
-    // TODO: declare inputs, precondition on ranges (record them in docs/ASSUMPTIONS.md),
-    //       call the C function, and assert the result equals `reduce` from the Cryptol model.
-    crucible_execute_func [];
+// Spec: for a 64-bit input `a` within the documented range -2^31*Q <= a <= Q*2^31, the C
+// function returns exactly `montgomery_reduce a` from the Cryptol model.
+let montgomery_reduce_spec = do {
+    a <- llvm_fresh_var "a" (llvm_int 64);
+    llvm_precond {{ mont_in_range a }};
+    llvm_execute_func [llvm_term a];
+    llvm_return (llvm_term {{ montgomery_reduce a }});
 };
 
-// --- spec for the NTT ---
-let ntt_spec = do {
-    // TODO: set up the coefficient array, precondition input ranges, run the C `ntt`,
-    //       assert output equals `ntt` from the Cryptol model.
-    crucible_execute_func [];
-};
+montgomery_reduce_ov <-
+    llvm_verify m "PQCLEAN_MLDSA44_CLEAN_montgomery_reduce" [] true montgomery_reduce_spec z3;
 
-// Discharge. These must actually verify — a failing proof must fail this script.
-// reduce_ov <- llvm_verify m "<c_reduce_symbol>" [] true reduce_spec z3;
-// ntt_ov    <- llvm_verify m "<c_ntt_symbol>" [reduce_ov] true ntt_spec z3;
-
-print "TODO: wire up llvm_verify calls; remove this line once real proofs run.";
+print "VERIFIED: PQCLEAN_MLDSA44_CLEAN_montgomery_reduce == Cryptol montgomery_reduce (under -2^31*Q <= a <= Q*2^31)";

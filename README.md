@@ -7,10 +7,14 @@ open-sourced for `corecrypto` in May 2026 — to *third-party, deployed* C imple
 ML-DSA (FIPS 204). The goal is to prove that the arithmetic subroutines most prone to subtle
 bugs are mathematically equivalent to the standard.
 
-> Status: **early / work in progress.** v1 targets a single subroutine (see Roadmap). Nothing
-> here should be treated as a verified result until the proofs in `spec/` and `proof/` actually
-> check end-to-end in CI. Claims of correctness are only as strong as the assumptions in
-> [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
+> Status: **early / work in progress.** v1 targets a single subroutine (see Roadmap).
+>
+> **What is actually proven today (tool-checked):** SAW proves the C function
+> `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce` (PQClean ML-DSA-44, pinned in `target/`) is bit-for-bit
+> equivalent to the Cryptol model in `model/`, for all inputs in the documented range
+> `−2³¹·Q ≤ a ≤ Q·2³¹` (`make saw` exits 0; verified non-vacuous). **Not yet proven:** the Isabelle
+> leg (model ≡ FIPS-204 spec), the other reduction primitives, and the forward NTT. Every claim is
+> only as strong as the assumptions in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
 ## Why this is different
 
@@ -28,10 +32,10 @@ It also deliberately targets **ML-DSA**, which is less completely verified than 
    target C subroutine
           │  (1) hand-translate
           ▼
-   Cryptol model  ──(2) SAW: prove C ≡ Cryptol──►  ✔
+   Cryptol model  ──(2) SAW: prove C ≡ Cryptol──►  ✔ (montgomery_reduce)
           │  (3) cryptol-to-isabelle
           ▼
-   Isabelle model ──(4) prove model ≡ FIPS spec──►  ✔
+   Isabelle model ──(4) prove model ≡ FIPS spec──►  ☐ not done yet
                                   ▲
                 FIPS 204 spec in Isabelle (reused from Apple's
                 release where licensing permits; see spec/README.md)
@@ -41,9 +45,12 @@ Full detail in [`docs/PIPELINE.md`](docs/PIPELINE.md).
 
 ## Reproduce
 
+Requires macOS on Apple Silicon (the pinned toolchain; see `docs/ASSUMPTIONS.md`).
+
 ```bash
-./scripts/setup.sh        # pin & install SAW, Cryptol, Isabelle, cryptol-to-isabelle
-make verify               # run the whole pipeline; non-zero exit = proof did not check
+./scripts/setup.sh        # pin & install SAW, Cryptol, Isabelle, cryptol-to-isabelle into .tools/
+make saw                  # the verified step today: prove C ≡ Cryptol; non-zero exit = proof failed
+# make verify             # whole pipeline incl. the Isabelle leg — NOT green yet (leg unfinished)
 ```
 
 ## Layout

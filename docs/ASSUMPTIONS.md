@@ -42,7 +42,18 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     equivalent, so it is not a behavioral change.)
 - The earlier 16-vector C-vs-Cryptol concrete cross-check (2026-06-01) remains as a secondary
   sanity check; the SAW proof above supersedes it for all in-range inputs.
-- **NOT yet proven:** model ≡ FIPS-204 spec (Isabelle leg), reduce32/caddq/freeze, the forward NTT.
+
+- **model ≡ FIPS-204 spec (Isabelle leg): OPEN / NOT PROVEN (2026-06-07).** Progress that IS
+  tool-checked: `cryptol-to-isabelle` lifts the model to `spec/isabelle/MLDSA_NTT.thy`; the `Assay`
+  Isabelle session builds (`isabelle build -D spec/isabelle Assay` finishes) so the lifted model and
+  the integer-level spec (`is_montgomery_reduction`: `2^32*r ≡ a mod q ∧ -q<r<q`) both type-check;
+  and the equivalence theorem `montgomery_reduce_correct` is stated and *mechanically reduced* to a
+  concrete 64/32-bit word + mod-q arithmetic goal. The final arithmetic is NOT discharged — the
+  proof ends in `oops`, so **no equivalence theorem exists yet**. The green `Assay` build does NOT
+  mean correctness-vs-spec is proven; it only means the files load. (No proof holes / no `sorry`.)
+  Prerequisite recorded for reproducibility: AFP `afp-2026-06-05` + the SAW `Cryptol` Isabelle
+  session, installed/built by `scripts/setup_isabelle_cryptol.sh` (heavy: Berlekamp_Zassenhaus).
+- **NOT yet proven:** model ≡ FIPS-204 spec (see above), reduce32/caddq/freeze, the forward NTT.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

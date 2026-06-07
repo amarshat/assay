@@ -40,7 +40,12 @@ jobs:
           path: |
             .tools
             .isabelle_home
-          key: full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}
+          # Unique key per run so a COMPLETE build always gets saved (actions/cache never overwrites
+          # an existing key); restore-keys falls back to the newest prior cache with the same prefix.
+          # This avoids getting stuck restoring a partial cache and rebuilding (~50min) every time.
+          key: full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}-${{ github.run_id }}
+          restore-keys: |
+            full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}-
       - name: Set up toolchain (SAW, Cryptol, Isabelle, clang)
         run: ./scripts/setup.sh
       - name: Build AFP + SAW 'Cryptol' Isabelle session (cached after first run)

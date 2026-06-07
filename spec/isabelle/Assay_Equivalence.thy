@@ -1,17 +1,18 @@
 (* The payoff (pipeline step 4): the model lifted from Cryptol (MLDSA_NTT.thy) satisfies the
    FIPS/mathematical specification of Montgomery reduction (MLDSA_NTT_Spec.thy).
 
-   STATUS: PARTIAL.  The integer-level mathematical core (`mont_core` below) IS PROVEN: given
-   T \<equiv> A*QINV (mod 2^32) and the ranges, r = (A - T*Q) div 2^32 satisfies the congruence and the
-   strict bounds -Q<r<Q. What remains OPEN is the word-level BRIDGE: showing the lifted
-   `montgomery_reduce` computes exactly that r with that T (relating seq/word casts, sshiftr, and
-   the low-32 truncation to the integer expression). The final theorem `montgomery_reduce_correct`
-   is therefore still abandoned with `oops` (NOT proven end-to-end).
-
-   IMPORTANT — do not be misled: this theory BUILDS GREEN, but `oops` means NO theorem is
-   produced. The C-vs-spec correctness of montgomery_reduce is therefore UNVERIFIED. Only the
-   SAW step (C == Cryptol model, make saw) is verified so far. This file deliberately contains
-   no proof-hole command (the one CI forbids), which would falsely register a theorem. *)
+   STATUS: PROVEN end-to-end (no proof holes). `isabelle build -D spec/isabelle Assay` exits 0.
+   The final theorem `montgomery_reduce_correct` establishes that the lifted Cryptol
+   `montgomery_reduce` satisfies `is_montgomery_reduction` (2^32*r == a (mod Q) and strict
+   -Q<r<Q) for every 64-bit input in the half-open documented range. Structure:
+     - mont_core      : integer-level correctness (congruence + strict bounds), given
+                        T == A*QINV (mod 2^32) and the ranges.
+     - probe_bridge   : the lifted montgomery_reduce equals a clean word computation
+                        (seq -> word, via word_seq_convs + sext64=scast + ucast_collapse).
+     - red_value      : sint of that word computation = (A - T*Q) div 2^32 (no overflow / fits).
+     - tcong          : T == A*QINV (mod 2^32), via the low-32 truncation.
+   Combined with the SAW leg (C == Cryptol model, make saw), this completes C == FIPS-spec for
+   montgomery_reduce over the half-open domain. Contains NO proof-hole command. *)
 
 theory Assay_Equivalence
   imports MLDSA_NTT MLDSA_NTT_Spec
@@ -62,6 +63,100 @@ proof -
   from cong rub rlb r_is show ?thesis by simp
 qed
 
+\<comment> \<open>sint of a down-cast (64->32) when the signed value fits in 32 bits\<close>
+lemma sint_ucast_fit:
+  fixes V :: "64 word"
+  assumes "- 2147483648 \<le> sint V" and "sint V < 2147483648"
+  shows "sint (ucast V :: 32 word) = sint V"
+proof -
+  have "sint (ucast V :: 32 word) = sint (scast V :: 32 word)"
+    by (simp add: scast_ucast_down_same)
+  also have "\<dots> = signed_take_bit 31 (sint V)"
+    by (simp add: signed_scast_eq)
+  also have "\<dots> = sint V" using assms by (simp add: signed_take_bit_int_eq_self)
+  finally show ?thesis .
+qed
+
+\<comment> \<open>sint of the clean word computation equals the integer expression mont_core reasons about\<close>
+lemma red_value:
+  fixes aw :: "64 word" and t32 :: "32 word"
+  assumes Alo: "- (2147483648 * 8380417) \<le> sint aw" and Ahi: "sint aw < 2147483648 * 8380417"
+  shows "sint (ucast (sshiftr (aw - scast t32 * 8380417) 32) :: 32 word)
+       = (sint aw - sint t32 * 8380417) div 4294967296"
+proof -
+  have e1: "(2147483648::int) * 8380417 = 17996808470921216" by simp
+  have t_lo: "(- 2147483648::int) \<le> sint t32" using sint_greater_eq[of t32] by simp
+  have t_hi: "sint t32 \<le> 2147483647" using sint_lt[of t32] by simp
+  have tq_lo: "- 17996808470921216 \<le> sint t32 * 8380417"
+    using mult_right_mono[OF t_lo, of 8380417] by simp
+  have tq_hi: "sint t32 * 8380417 \<le> 17996808462540799"
+    using mult_right_mono[OF t_hi, of 8380417] by simp
+  have hom: "aw - scast t32 * 8380417 = (of_int (sint aw - sint t32 * 8380417) :: 64 word)"
+    by (simp add: of_int_sint_scast)
+  have fitX: "- 9223372036854775808 \<le> sint aw - sint t32 * 8380417
+            \<and> sint aw - sint t32 * 8380417 < 9223372036854775808"
+    using Alo Ahi tq_lo tq_hi e1 by linarith
+  have sintX: "sint (aw - scast t32 * 8380417) = sint aw - sint t32 * 8380417"
+    unfolding hom by (rule sint_of_int_eq; (use fitX in simp))
+  have sh: "sint (sshiftr (aw - scast t32 * 8380417) 32) = (sint aw - sint t32 * 8380417) div 4294967296"
+    using sintX by (simp add: sshiftr_div_2n)
+  have ub: "sint aw - sint t32 * 8380417 < 35993616941842432" using Ahi tq_lo e1 by linarith
+  have lb: "- 35993616941842432 \<le> sint aw - sint t32 * 8380417" using Alo tq_hi e1 by linarith
+  have v_hi: "(sint aw - sint t32 * 8380417) div 4294967296 < 2147483648"
+  proof -
+    have "(sint aw - sint t32 * 8380417) div 4294967296 \<le> 35993616941842431 div 4294967296"
+      using ub by (auto intro: zdiv_mono1)
+    thus ?thesis by simp
+  qed
+  have v_lo: "- 2147483648 \<le> (sint aw - sint t32 * 8380417) div 4294967296"
+  proof -
+    have "(- 35993616941842432) div (4294967296::int) \<le> (sint aw - sint t32 * 8380417) div 4294967296"
+      using lb by (auto intro: zdiv_mono1)
+    thus ?thesis by simp
+  qed
+  have Vfit: "- 2147483648 \<le> sint (sshiftr (aw - scast t32 * 8380417) 32)
+            \<and> sint (sshiftr (aw - scast t32 * 8380417) 32) < 2147483648"
+    using v_lo v_hi unfolding sh by simp
+  show ?thesis
+    using sint_ucast_fit[OF conjunct1[OF Vfit] conjunct2[OF Vfit]] sh by simp
+qed
+
+\<comment> \<open>the low-32-bits t satisfy t \<equiv> a*QINV (mod 2^32)\<close>
+lemma tcong:
+  fixes aw :: "64 word"
+  shows "(sint (ucast (aw * 58728449) :: 32 word) - sint aw * 58728449) mod 4294967296 = 0"
+proof -
+  have stb: "sint (ucast (aw * 58728449) :: 32 word) = signed_take_bit 31 (sint (aw * 58728449))"
+  proof -
+    have "sint (ucast (aw * 58728449) :: 32 word) = sint (scast (aw * 58728449) :: 32 word)"
+      by (simp add: scast_ucast_down_same)
+    thus ?thesis by (simp add: signed_scast_eq)
+  qed
+  have m1: "signed_take_bit 31 (sint (aw * 58728449)) mod 4294967296
+          = sint (aw * 58728449) mod 4294967296"
+    by (simp add: signed_take_bit_eq_take_bit_shift take_bit_eq_mod mod_diff_left_eq)
+  have su: "\<And>y::64 word. sint y mod 4294967296 = uint y mod 4294967296"
+  proof -
+    fix y :: "64 word"
+    have key: "(uint y - 18446744073709551616) mod 4294967296 = uint y mod 4294967296"
+      using mod_mult_self1[of "uint y" "- 4294967296" 4294967296] by simp
+    show "sint y mod 4294967296 = uint y mod 4294967296"
+      using key by (simp add: word_sint_msb_eq size_word.rep_eq)
+  qed
+  have m2: "sint (aw * 58728449) mod 4294967296 = (sint aw * 58728449) mod 4294967296"
+  proof -
+    have "sint (aw * 58728449) mod 4294967296 = uint (aw * 58728449) mod 4294967296" by (rule su)
+    also have "\<dots> = (uint aw * 58728449) mod 4294967296"
+      by (simp add: uint_word_ariths(3) take_bit_eq_mod mod_mod_cancel)
+    also have "\<dots> = (sint aw * 58728449) mod 4294967296"
+      by (rule mod_mult_cong[OF su[of aw, symmetric] refl])
+    finally show ?thesis .
+  qed
+  have "sint (ucast (aw * 58728449) :: 32 word) mod 4294967296 = (sint aw * 58728449) mod 4294967296"
+    using stb m1 m2 by simp
+  thus ?thesis by (simp add: mod_eq_dvd_iff)
+qed
+
 context includes cryptol_translation_syntax begin
 
 text \<open>
@@ -109,12 +204,29 @@ theorem montgomery_reduce_correct:
   fixes a :: "(64, bool) seq"
   assumes "mont_input_ok (sint_seq a)"
   shows "is_montgomery_reduction (sint_seq a) (sint_seq (montgomery_reduce a))"
-  unfolding is_montgomery_reduction_def mont_input_ok_def MLDSA_NTT_Spec.q_def
-            montgomery_reduce_def sext64_def Q64_def QINV_def
-  apply (simp add: word_seq_convs seq_to_word)
-  (* Remaining goal is a pure 64/32-bit word + (mod 8380417) arithmetic obligation;
-     see PROOF PLAN above. NOT discharged yet. *)
-  oops
+proof -
+  define aw  :: "64 word" where "aw  = seq_to_word a"
+  define t32 :: "32 word" where "t32 = ucast (aw * 58728449)"
+  have A_eq: "sint_seq a = sint aw" unfolding aw_def by (rule probe_sint_seq)
+  have Arng: "- (2147483648 * 8380417) \<le> sint aw \<and> sint aw < 2147483648 * 8380417"
+    using assms unfolding mont_input_ok_def MLDSA_NTT_Spec.q_def A_eq by simp
+  \<comment> \<open>bridge to the clean word value, then to its integer meaning\<close>
+  have bval: "sint_seq (montgomery_reduce a)
+            = sint (ucast (sshiftr (aw - scast t32 * 8380417) 32) :: 32 word)"
+    unfolding aw_def t32_def by (simp add: probe_sint_seq probe_bridge)
+  have rval: "sint_seq (montgomery_reduce a) = (sint aw - sint t32 * 8380417) div 4294967296"
+    unfolding bval using red_value[OF conjunct1[OF Arng] conjunct2[OF Arng]] .
+  \<comment> \<open>premises for mont_core\<close>
+  have Tcong: "(sint t32 - sint aw * 58728449) mod 4294967296 = 0"
+    unfolding t32_def by (rule tcong)
+  have Trng: "- 2147483648 \<le> sint t32 \<and> sint t32 < 2147483648"
+    using sint_greater_eq[of t32] sint_lt[of t32] by simp
+  show ?thesis
+    unfolding is_montgomery_reduction_def MLDSA_NTT_Spec.q_def A_eq rval
+    using mont_core[OF Tcong conjunct1[OF Trng] conjunct2[OF Trng]
+                       conjunct1[OF Arng] conjunct2[OF Arng]]
+    by simp
+qed
 
 end
 

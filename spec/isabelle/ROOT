@@ -1,6 +1,8 @@
-session Assay = HOL +
-  description \<open>Equivalence of a deployed ML-DSA NTT subroutine with its FIPS-204 specification.\<close>
+session Assay in "." = "Cryptol" +
+  description \<open>Equivalence of the deployed ML-DSA montgomery_reduce subroutine with its
+    mathematical (FIPS-204-consistent) specification.\<close>
   options [document = false]
   theories
+    MLDSA_NTT
     MLDSA_NTT_Spec
     Assay_Equivalence

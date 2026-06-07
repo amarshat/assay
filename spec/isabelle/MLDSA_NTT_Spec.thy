@@ -1,23 +1,28 @@
-(* FIPS-204 forward NTT specification.
-   STATUS: SCAFFOLD / UNVERIFIED skeleton. Either reuse Apple's formalization (check license,
-   see spec/README.md) or define independently from FIPS 204. Nothing here is a result until
-   the session builds and Assay_Equivalence checks. *)
+(* Mathematical specification for the ML-DSA modular-reduction primitive.
+
+   SCOPE (v1): montgomery_reduce only. The forward NTT spec is future work.
+
+   FIPS 204 fixes the prime modulus q = 8380417 for ML-DSA. Montgomery reduction is an
+   implementation device (not spelled out in FIPS 204 text): for input a it must return a value
+   congruent to a * 2^-32 modulo q, in the range (-q, q). This theory states exactly that
+   correctness property at the integer level; Assay_Equivalence.thy proves the lifted Cryptol
+   model satisfies it.
+
+   STATUS: this file defines specifications only (no proof obligations); it builds under plain HOL. *)
 
 theory MLDSA_NTT_Spec
-  imports Main "HOL-Library.Word"
+  imports Main
 begin
 
-(* TODO: fix parameters against FIPS 204. *)
-definition q :: nat where "q = 8380417"   (* TODO confirm *)
-definition n :: nat where "n = 256"        (* TODO confirm *)
+definition q :: int where "q = 8380417"
 
-(* Specification-level reduction: abstract, range-correct. *)
-definition spec_reduce :: "int \<Rightarrow> int" where
-  "spec_reduce x = x mod (int q)"          (* TODO: align with FIPS-defined reduction *)
+(* Documented input domain of the C montgomery_reduce: -2^31*q <= a <= q*2^31. *)
+definition mont_input_ok :: "int \<Rightarrow> bool" where
+  "mont_input_ok a \<longleftrightarrow> -(2^31 * q) \<le> a \<and> a \<le> 2^31 * q"
 
-(* Specification-level forward NTT. Define abstractly (e.g. via the evaluation/zeta formulation),
-   independent of the C's loop structure. *)
-definition spec_ntt :: "int list \<Rightarrow> int list" where
-  "spec_ntt xs = xs"                        (* TODO: real FIPS-204 NTT definition *)
+(* r is a correct Montgomery reduction of a iff  2^32 * r \<equiv> a  (mod q)  and  -q < r < q.
+   (Equivalently r \<equiv> a * 2^-32 (mod q), since gcd(2,q)=1.) *)
+definition is_montgomery_reduction :: "int \<Rightarrow> int \<Rightarrow> bool" where
+  "is_montgomery_reduction a r \<longleftrightarrow> (2^32 * r) mod q = a mod q \<and> -q < r \<and> r < q"
 
 end

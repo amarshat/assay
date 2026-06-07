@@ -3,32 +3,53 @@ on:
   push:
   pull_request:
 
-# What this CI proves (honestly): the SAW leg — C `montgomery_reduce` == Cryptol model — checks
-# from scratch on a clean macOS Apple-Silicon runner. The Isabelle equivalence leg is NOT run here
-# yet because it is not proven (Assay_Equivalence.thy ends in `oops`); wiring a green Isabelle build
-# would imply a result that does not exist. It will be added once the equivalence theorem is closed.
+# Two jobs:
+#  - saw:    fast (~1 min cached) — the SAW leg, C montgomery_reduce == Cryptol model.
+#  - verify: full pipeline — SAW + Isabelle (model == FIPS/math spec). Heavy on first run
+#            (~20-30 min: downloads Isabelle + AFP and builds the SAW 'Cryptol' session), then
+#            cached. Both run on macOS Apple Silicon (matches the pinned arm64 SAW binary).
 jobs:
   saw:
-    # Apple Silicon: matches the pinned saw-1.5.1-macos-15-ARM64 binary (setup.sh).
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-
       - name: Cache toolchain (.tools)
         uses: actions/cache@v4
         with:
           path: .tools
           key: tools-saw1.5.1-${{ runner.os }}-${{ hashFiles('scripts/setup.sh') }}
-
-      - name: Set up toolchain (SAW + clang; Isabelle skipped for the SAW-only job)
+      - name: Set up toolchain (SAW + clang; Isabelle skipped)
         run: SKIP_ISABELLE=1 ./scripts/setup.sh
-
-      - name: Reject proof holes (no `sorry` may reach a verified claim)
+      - name: Reject proof holes (no `sorry`)
         run: |
           if grep -rn --include='*.thy' '\bsorry\b' spec/; then
-            echo "::error::Found 'sorry' (proof hole) in spec/ — not a verified proof."
-            exit 1
+            echo "::error::Found 'sorry' (proof hole) in spec/."; exit 1
           fi
-
       - name: Prove C == Cryptol model (SAW)
         run: make saw
+
+  verify:
+    runs-on: macos-15
+    env:
+      # keep Isabelle's heaps + component registrations inside the workspace so they cache
+      ISABELLE_HOME_USER: ${{ github.workspace }}/.isabelle_home
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache toolchain + AFP + Isabelle heaps
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            .isabelle_home
+          key: full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}
+      - name: Set up toolchain (SAW, Cryptol, Isabelle, clang)
+        run: ./scripts/setup.sh
+      - name: Build AFP + SAW 'Cryptol' Isabelle session (cached after first run)
+        run: ./scripts/setup_isabelle_cryptol.sh
+      - name: Reject proof holes (no `sorry`)
+        run: |
+          if grep -rn --include='*.thy' '\bsorry\b' spec/; then
+            echo "::error::Found 'sorry' (proof hole) in spec/."; exit 1
+          fi
+      - name: Full pipeline — SAW (C==Cryptol) + Isabelle (model==spec)
+        run: make verify

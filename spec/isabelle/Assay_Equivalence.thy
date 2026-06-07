@@ -82,6 +82,29 @@ text \<open>
   sshiftr, take_bit) is the bulk of the remaining work.
 \<close>
 
+\<comment> \<open>PROBE bridge lemmas (per-operation seq->word). Confirm whether sext64 is a sign-extend.\<close>
+lemma probe_sint_seq: "sint_seq (w :: ('n::len, bool) seq) = sint (seq_to_word w)"
+  by (simp add: word_seq_convs)
+
+lemma probe_sext64: "seq_to_word (sext64 x) = (scast (seq_to_word x) :: 64 word)"
+  unfolding sext64_def
+  apply (simp add: word_seq_convs seq_to_word)
+  apply (intro conjI impI; word_bitwise; simp)
+  done
+
+\<comment> \<open>collapse the seq-library's 32+32 length-type cast bookkeeping back to a plain low-32 ucast\<close>
+lemma ucast_collapse:
+  "LENGTH('m::len) = 64 \<Longrightarrow>
+   (ucast (take_bit 32 (ucast (y::64 word) :: 'm word)) :: 32 word) = ucast y"
+  by (rule bit_word_eqI) (auto simp: bit_simps)
+
+lemma probe_bridge:
+  "seq_to_word (montgomery_reduce a) =
+   (ucast (sshiftr (seq_to_word a - scast (ucast (seq_to_word a * 58728449) :: 32 word) * 8380417) 32)
+    :: 32 word)"
+  unfolding montgomery_reduce_def Q64_def QINV_def
+  by (simp add: word_seq_convs seq_to_word probe_sext64 ucast_collapse)
+
 theorem montgomery_reduce_correct:
   fixes a :: "(64, bool) seq"
   assumes "mont_input_ok (sint_seq a)"

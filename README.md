@@ -27,6 +27,10 @@ assembly code shipped in most products** (AVX2, aarch64-asm, mldsa-native); that
 > `montgomery_reduce` doc-comment bound at the inclusive endpoint (see `docs/ASSUMPTIONS.md`, OF-1).
 > Every claim is only as strong as the assumptions in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
+## Background: what Apple shipped in May 2026 (for newcomers)
+
+New to this? In May 2026 Apple open-sourced the [formal verification of its `corecrypto` library](https://github.com/apple/corecrypto/tree/2026-05) — the cryptography that runs on Apple devices — covering the new post-quantum algorithms ML-KEM and ML-DSA (NIST FIPS 203/204). *Formal verification* means proving, with machine-checked mathematics, that the actual shipping code (C, and even ARM64 assembly) computes **exactly** what the official specification says — for *every* possible input, not just the cases a test happens to try. Apple did this using open tools from [Galois](https://github.com/GaloisInc/saw-script) (SAW + Cryptol) plus the [Isabelle](https://isabelle.in.tum.de/) theorem prover, and the effort even caught real bugs that ordinary testing missed. **Assay applies that same public approach to _third-party_ reference C** (here, PQClean's ML-DSA), starting with one small arithmetic primitive — see below. We reuse the *approach and tools*, not Apple's code or proofs.
+
 ## Why this is different
 
 Most formally verified PQC (libcrux, HACL\*, formosa-mlkem) is written in a research language

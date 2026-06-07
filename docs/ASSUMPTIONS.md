@@ -56,7 +56,12 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     `Berlekamp_Zassenhaus`). Prerequisite built by `scripts/setup_isabelle_cryptol.sh` (AFP
     `afp-2026-06-05`; heavy).
   - **Chaining:** with the SAW leg (C ≡ Cryptol model) this gives end-to-end: the deployed C
-    `montgomery_reduce` computes a correct Montgomery residue mod Q over the stated input range.
+    `montgomery_reduce` computes a correct Montgomery residue mod Q. Note the two legs use slightly
+    different input predicates — SAW proves C ≡ model over the INCLUSIVE range `-2^31*Q ≤ a ≤ Q*2^31`
+    (`mont_in_range`), while the Isabelle correctness spec uses the HALF-OPEN `-2^31*Q ≤ a < 2^31*Q`
+    (`mont_input_ok`, where the strict `-Q<r<Q` actually holds; OF-1). The composed end-to-end
+    correctness claim therefore holds on the half-open intersection (which is the honest, maximal
+    domain for the strict-bound spec).
 - **NOT proven:** reduce32/caddq/freeze, the forward NTT, optimized/native code, constant-time.
 
 ## Tool/version pins

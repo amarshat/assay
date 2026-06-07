@@ -1,10 +1,12 @@
 (* The payoff (pipeline step 4): the model lifted from Cryptol (MLDSA_NTT.thy) satisfies the
    FIPS/mathematical specification of Montgomery reduction (MLDSA_NTT_Spec.thy).
 
-   STATUS: OPEN / NOT PROVEN.  This is the hard mathematical step and it is NOT yet discharged.
-   The theorem below is stated and *mechanically reduced* to a concrete word-arithmetic goal
-   (see the reduction proof + the recorded remaining goal), but the final arithmetic is left
-   open and the proof is abandoned with `oops`.
+   STATUS: PARTIAL.  The integer-level mathematical core (`mont_core` below) IS PROVEN: given
+   T \<equiv> A*QINV (mod 2^32) and the ranges, r = (A - T*Q) div 2^32 satisfies the congruence and the
+   strict bounds -Q<r<Q. What remains OPEN is the word-level BRIDGE: showing the lifted
+   `montgomery_reduce` computes exactly that r with that T (relating seq/word casts, sshiftr, and
+   the low-32 truncation to the integer expression). The final theorem `montgomery_reduce_correct`
+   is therefore still abandoned with `oops` (NOT proven end-to-end).
 
    IMPORTANT — do not be misled: this theory BUILDS GREEN, but `oops` means NO theorem is
    produced. The C-vs-spec correctness of montgomery_reduce is therefore UNVERIFIED. Only the
@@ -14,6 +16,51 @@
 theory Assay_Equivalence
   imports MLDSA_NTT MLDSA_NTT_Spec
 begin
+
+(* ----------------------------------------------------------------------------------------------
+   Integer-level core of Montgomery reduction correctness (no words yet).
+   If T ≡ A*QINV (mod 2^32) and the ranges hold, then r = (A - T*Q) div 2^32 satisfies the spec.
+   QINV*Q = 1 + 114592*2^32, i.e. QINV*Q ≡ 1 (mod 2^32). Q = 8380417, 2^32 = 4294967296. *)
+lemma qinv_q: "(58728449::int) * 8380417 = 1 + 114592 * 4294967296" by simp
+
+lemma mont_core:
+  fixes A T :: int
+  assumes Tc:  "(T - A * 58728449) mod 4294967296 = 0"
+      and Tlo: "- 2147483648 \<le> T" and Thi: "T < 2147483648"
+      and Alo: "- (2147483648 * 8380417) \<le> A" and Ahi: "A < 2147483648 * 8380417"
+  shows "(4294967296 * ((A - T * 8380417) div 4294967296)) mod 8380417 = A mod 8380417
+       \<and> - 8380417 < (A - T * 8380417) div 4294967296
+       \<and> (A - T * 8380417) div 4294967296 < 8380417"
+proof -
+  from Tc have "(4294967296::int) dvd (T - A * 58728449)" by (simp add: mod_eq_0_iff_dvd)
+  then obtain k where k: "T - A * 58728449 = 4294967296 * k" by (auto elim: dvdE)
+  hence T_eq: "T = A * 58728449 + 4294967296 * k" by simp
+  define r where "r = - (A * 114592 + k * 8380417)"
+  have D_eq: "A - T * 8380417 = 4294967296 * r"
+    unfolding r_def T_eq by (simp add: algebra_simps)
+  hence r_is: "(A - T * 8380417) div 4294967296 = r" by simp
+  \<comment> \<open>congruence: 2^32*r = A - T*Q \<equiv> A (mod Q), since Q dvd T*Q (NO presburger: huge modulus)\<close>
+  have cong: "(4294967296 * r) mod 8380417 = A mod 8380417"
+  proof -
+    have eq: "4294967296 * r = A - T * 8380417" using D_eq by simp
+    have "(A - T * 8380417) mod (8380417::int) = A mod 8380417"
+      using mod_mult_self1[of A "- T" 8380417] by (simp add: algebra_simps)
+    thus ?thesis using eq by simp
+  qed
+  \<comment> \<open>bounds: multiply the range hyps by Q, then divide the 2^32*r relation. Evaluate the big
+      numeral products up front so linarith only sees plain integers.\<close>
+  have e1: "(2147483648::int) * 8380417 = 17996808470921216" by simp
+  have e2: "(4294967296::int) * 8380417 = 35993616941842432" by simp
+  have Tq_lo: "T * 8380417 \<ge> - 17996808470921216" using Tlo by (simp add: mult_right_mono)
+  have Tq_hi: "T * 8380417 \<le> 17996808462540799" using Thi by (simp add: mult_right_mono)
+  have Ahi': "A < 17996808470921216" using Ahi e1 by simp
+  have Alo': "- 17996808470921216 \<le> A" using Alo e1 by simp
+  have ub: "4294967296 * r < 35993616941842432" using D_eq Ahi' Tq_lo by linarith
+  have lb: "- 35993616941842432 < 4294967296 * r" using D_eq Alo' Tq_hi by linarith
+  from ub have rub: "r < 8380417" by simp
+  from lb have rlb: "- 8380417 < r" by simp
+  from cong rub rlb r_is show ?thesis by simp
+qed
 
 context includes cryptol_translation_syntax begin
 

@@ -83,4 +83,18 @@ Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform
   (see "Compiler correctness").
 
 ## Open findings (handle per CONTRIBUTING.md → Responsible disclosure)
-- (none yet)
+- **OF-1 (2026-06-07): PQClean `montgomery_reduce` doc-comment postcondition is off by one at the
+  upper input endpoint.** The comment in `target/pqclean/reduce.c` states, for input domain
+  `-2^31*Q <= a <= Q*2^31` (inclusive), that it returns `r` with **`-Q < r < Q`** (strict). But at
+  `a = 2^31*Q` the function returns `r = Q` (= 8380417), which violates the strict upper bound.
+  Verified directly against the vendored C: `montgomery_reduce(17996808470921216) = 8380417`; the
+  lower endpoint `a = -2^31*Q` returns `0` (fine). The congruence `2^32*r ≡ a (mod Q)` still holds.
+  - Severity: **documentation/contract only, not a security or functional bug.** Real callers (NTT
+    butterflies) feed products bounded well below `2^31*Q`, so the endpoint is not exercised in
+    practice. The reference is mathematically correct; only the stated strict bound at the inclusive
+    endpoint is wrong (the true guarantee over the inclusive domain is `-Q <= r <= Q`).
+  - Disclosure: **do NOT auto-file upstream** (CLAUDE.md). Surfaced to the maintainer (human) on
+    2026-06-07. Decide deliberately whether/how to report to PQClean / pq-crystals.
+  - Impact on Assay: the SAW leg (C ≡ Cryptol model) is unaffected — it asserts no bound. The
+    Isabelle correctness spec is stated over the **half-open** domain `-2^31*Q <= a < 2^31*Q`, where
+    the strict `-Q < r < Q` is actually true; see `spec/isabelle/MLDSA_NTT_Spec.thy` (`mont_input_ok`).

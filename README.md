@@ -48,8 +48,8 @@ It also deliberately targets **ML-DSA**, which is less completely verified than 
           ▼
    Isabelle model ──(4) prove model ≡ FIPS spec──►  ☐ not done yet
                                   ▲
-                FIPS 204 spec in Isabelle (reused from Apple's
-                release where licensing permits; see spec/README.md)
+                Spec in Isabelle (written independently; NO Apple
+                artifacts used; see spec/README.md)
 ```
 
 Full detail in [`docs/PIPELINE.md`](docs/PIPELINE.md).

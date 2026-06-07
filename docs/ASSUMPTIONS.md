@@ -7,8 +7,9 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
 - **Compiler correctness.** We verify C (via its LLVM bitcode) and the FIPS spec; we assume the
   compiler faithfully lowers verified C. (Same assumption Apple states for corecrypto.)
 - **Tool soundness.** We trust SAW, Cryptol, the cryptol-to-isabelle translator, and Isabelle.
-- **Spec faithfulness.** We assume our Isabelle formalization of FIPS 204 (or the reused Apple
-  formalization) faithfully captures the standard. Provenance noted in spec/README.md.
+- **Spec faithfulness.** We assume our (independently written, no Apple artifacts) Isabelle
+  specification faithfully captures the intended Montgomery-reduction behavior / FIPS 204.
+  Provenance noted in spec/README.md.
 
 ## Scope limits (v1)
 - **This session proves nothing about the forward NTT.** Scope is the single primitive

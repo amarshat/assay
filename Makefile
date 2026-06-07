@@ -42,7 +42,7 @@ isabelle:
 
 ## Build the technical writeup (placeholder — wire up your renderer of choice)
 writeup:
-	@echo "See docs/writeup/using-apple-corecrypto-toolchain.md"
+	@echo "See docs/writeup/verifying-third-party-pqc-with-saw-and-isabelle.md"
 
 clean:
 	rm -rf build output heaps browser_info *.saw-cache saw-out

@@ -68,18 +68,24 @@ if command -v codesign >/dev/null; then
 fi
 
 # --- Isabelle ---------------------------------------------------------------
-ISA_HOME="$TOOLS_DIR/Isabelle${ISABELLE_VERSION}"
-if [[ ! -x "$ISA_HOME/bin/isabelle" ]] && [[ -z "$(find "$ISA_HOME" -name isabelle -path '*/bin/*' 2>/dev/null | head -1)" ]]; then
-  fetch "$ISA_URL" "$DL_DIR/$ISA_ASSET"
-  echo ">> extracting Isabelle ${ISABELLE_VERSION}"
-  rm -rf "$ISA_HOME" && mkdir -p "$ISA_HOME"
-  # macOS tarball unpacks to an .app bundle; --strip-components flattens it to ISA_HOME.
-  tar -xzf "$DL_DIR/$ISA_ASSET" -C "$ISA_HOME" --strip-components=1
+# Set SKIP_ISABELLE=1 to skip the (large, ~1.6GB) Isabelle download — e.g. CI that only runs
+# `make saw` does not need it.
+if [[ -z "${SKIP_ISABELLE:-}" ]]; then
+  ISA_HOME="$TOOLS_DIR/Isabelle${ISABELLE_VERSION}"
+  if [[ ! -x "$ISA_HOME/bin/isabelle" ]] && [[ -z "$(find "$ISA_HOME" -name isabelle -path '*/bin/*' 2>/dev/null | head -1)" ]]; then
+    fetch "$ISA_URL" "$DL_DIR/$ISA_ASSET"
+    echo ">> extracting Isabelle ${ISABELLE_VERSION}"
+    rm -rf "$ISA_HOME" && mkdir -p "$ISA_HOME"
+    # macOS tarball unpacks to an .app bundle; --strip-components flattens it to ISA_HOME.
+    tar -xzf "$DL_DIR/$ISA_ASSET" -C "$ISA_HOME" --strip-components=1
+  fi
+  xattr -dr com.apple.quarantine "$ISA_HOME" 2>/dev/null || true
+  # The CLI launcher lives at <app>/bin/isabelle (or Contents/Resources/.../bin/isabelle).
+  ISA_BIN="$(find "$ISA_HOME" -type f -name isabelle -path '*/bin/*' | head -1 || true)"
+  [[ -n "$ISA_BIN" ]] && link "$ISA_BIN" "isabelle"
+else
+  echo ">> SKIP_ISABELLE set — skipping Isabelle install"
 fi
-xattr -dr com.apple.quarantine "$ISA_HOME" 2>/dev/null || true
-# The CLI launcher lives at <app>/bin/isabelle (or Contents/Resources/.../bin/isabelle).
-ISA_BIN="$(find "$ISA_HOME" -type f -name isabelle -path '*/bin/*' | head -1 || true)"
-[[ -n "$ISA_BIN" ]] && link "$ISA_BIN" "isabelle"
 
 # --- clang (system) ---------------------------------------------------------
 if ! clang --version | grep -qF "$EXPECTED_CLANG"; then
@@ -92,6 +98,8 @@ echo ">> toolchain installed under $TOOLS_DIR"
 echo ">> add to PATH for this shell:   export PATH=\"$BIN_DIR:\$PATH\""
 echo ">> verifying versions:"
 "$BIN_DIR/saw" --version || { echo "!! saw failed to run" >&2; exit 1; }
-"$BIN_DIR/isabelle" version || { echo "!! isabelle failed to run" >&2; exit 1; }
+if [[ -z "${SKIP_ISABELLE:-}" ]]; then
+  "$BIN_DIR/isabelle" version || { echo "!! isabelle failed to run" >&2; exit 1; }
+fi
 clang --version | head -1
 echo ">> setup complete."

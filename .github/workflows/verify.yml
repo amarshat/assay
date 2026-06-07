@@ -3,22 +3,32 @@ on:
   push:
   pull_request:
 
+# What this CI proves (honestly): the SAW leg — C `montgomery_reduce` == Cryptol model — checks
+# from scratch on a clean macOS Apple-Silicon runner. The Isabelle equivalence leg is NOT run here
+# yet because it is not proven (Assay_Equivalence.thy ends in `oops`); wiring a green Isabelle build
+# would imply a result that does not exist. It will be added once the equivalence theorem is closed.
 jobs:
-  proof:
-    runs-on: ubuntu-latest
+  saw:
+    # Apple Silicon: matches the pinned saw-1.5.1-macos-15-ARM64 binary (setup.sh).
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up toolchain
-        run: ./scripts/setup.sh
+      - name: Cache toolchain (.tools)
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-saw1.5.1-${{ runner.os }}-${{ hashFiles('scripts/setup.sh') }}
 
-      # Reject proof holes: no `sorry` may reach a verified claim.
-      - name: No sorry in Isabelle proofs
+      - name: Set up toolchain (SAW + clang; Isabelle skipped for the SAW-only job)
+        run: SKIP_ISABELLE=1 ./scripts/setup.sh
+
+      - name: Reject proof holes (no `sorry` may reach a verified claim)
         run: |
           if grep -rn --include='*.thy' '\bsorry\b' spec/; then
-            echo "::error::Found 'sorry' (proof hole) — not a verified proof."
+            echo "::error::Found 'sorry' (proof hole) in spec/ — not a verified proof."
             exit 1
           fi
 
-      - name: Run pipeline
-        run: make verify
+      - name: Prove C == Cryptol model (SAW)
+        run: make saw

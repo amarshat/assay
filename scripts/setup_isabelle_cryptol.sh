@@ -39,6 +39,9 @@ isabelle components -u "$SAW_ISA_COMPONENT"
 
 # --- 3. build the Cryptol support image (the long part) ---
 echo ">> building Isabelle session 'Cryptol' (this is the heavy step: Berlekamp_Zassenhaus, Word_Lib, Cryptol)"
-isabelle build -bv Cryptol
+# timeout_scale multiplies AFP sessions' declared per-session timeouts. Slow/loaded machines (e.g.
+# CI runners) otherwise hit '*** Timeout' on heavy AFP entries like Jordan_Normal_Form. Override
+# with ISABELLE_TIMEOUT_SCALE; 10 is generous headroom.
+isabelle build -o timeout_scale="${ISABELLE_TIMEOUT_SCALE:-10}" -bv Cryptol
 
 echo ">> DONE: Cryptol Isabelle session built. cryptol-to-isabelle output can now be checked."

@@ -1,4 +1,8 @@
-# Assay
+<p align="center">
+  <img src="assay-logo.png" alt="Assay — C = spec" width="260">
+</p>
+
+<h1 align="center">Assay</h1>
 
 **Machine-checking a post-quantum reference-C arithmetic primitive against its specification, with an Apple-style SAW → Cryptol → Isabelle pipeline.**
 

@@ -44,17 +44,20 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
 - The earlier 16-vector C-vs-Cryptol concrete cross-check (2026-06-01) remains as a secondary
   sanity check; the SAW proof above supersedes it for all in-range inputs.
 
-- **model ≡ FIPS-204 spec (Isabelle leg): OPEN / NOT PROVEN (2026-06-07).** Progress that IS
-  tool-checked: `cryptol-to-isabelle` lifts the model to `spec/isabelle/MLDSA_NTT.thy`; the `Assay`
-  Isabelle session builds (`isabelle build -D spec/isabelle Assay` finishes) so the lifted model and
-  the integer-level spec (`is_montgomery_reduction`: `2^32*r ≡ a mod q ∧ -q<r<q`) both type-check;
-  and the equivalence theorem `montgomery_reduce_correct` is stated and *mechanically reduced* to a
-  concrete 64/32-bit word + mod-q arithmetic goal. The final arithmetic is NOT discharged — the
-  proof ends in `oops`, so **no equivalence theorem exists yet**. The green `Assay` build does NOT
-  mean correctness-vs-spec is proven; it only means the files load. (No proof holes / no `sorry`.)
-  Prerequisite recorded for reproducibility: AFP `afp-2026-06-05` + the SAW `Cryptol` Isabelle
-  session, installed/built by `scripts/setup_isabelle_cryptol.sh` (heavy: Berlekamp_Zassenhaus).
-- **NOT yet proven:** model ≡ FIPS-204 spec (see above), reduce32/caddq/freeze, the forward NTT.
+- **model ≡ FIPS/math spec (Isabelle leg): VERIFIED (2026-06-07).** `make verify` (SAW + Isabelle)
+  exits 0; `isabelle build -D spec/isabelle Assay` checks `montgomery_reduce_correct` with NO `sorry`
+  / NO `oops`. Theorem: the cryptol-to-isabelle-lifted `montgomery_reduce` satisfies
+  `is_montgomery_reduction (sint_seq a) (sint_seq (montgomery_reduce a))`, i.e. `2^32*r ≡ a (mod Q)`
+  and strict `-Q < r < Q`, for every `a` with `-2^31*Q ≤ sint a < 2^31*Q` (half-open; see OF-1).
+  Proof structure: `mont_core` (integer core) + `probe_bridge` (seq→word) + `red_value`
+  (sint of the word computation = `(A - T*Q) div 2^32`, no overflow) + `tcong` (`T ≡ A*QINV mod 2^32`).
+  - Trust base note: relies on `cryptol-to-isabelle` translating the Cryptol model faithfully (tool
+    soundness assumption) and on the SAW Cryptol support library + AFP (`Word_Lib`,
+    `Berlekamp_Zassenhaus`). Prerequisite built by `scripts/setup_isabelle_cryptol.sh` (AFP
+    `afp-2026-06-05`; heavy).
+  - **Chaining:** with the SAW leg (C ≡ Cryptol model) this gives end-to-end: the deployed C
+    `montgomery_reduce` computes a correct Montgomery residue mod Q over the stated input range.
+- **NOT proven:** reduce32/caddq/freeze, the forward NTT, optimized/native code, constant-time.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

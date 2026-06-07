@@ -10,20 +10,22 @@ relies on (Montgomery reduction is not itself defined in FIPS 204). **This is no
 assembly code shipped in most products** (AVX2, aarch64-asm, mldsa-native); that is a later goal
 (see Roadmap v2). **The NTT itself is not yet modeled.**
 
-> Status: **early / work in progress.** Scope today = the single function `montgomery_reduce` (NOT
-> the NTT, NOT the other reduction primitives, NOT a full algorithm).
+> Status: **v1 proof complete for one primitive.** Scope = the single function `montgomery_reduce`
+> (NOT the NTT, NOT the other reduction primitives, NOT a full algorithm).
 >
-> **What is actually proven today (tool-checked):**
-> - **SAW (C ≡ Cryptol): DONE.** SAW proves the C function `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce`
+> **What is proven today (tool-checked, `make verify` exits 0):**
+> - **SAW (C ≡ Cryptol): DONE.** The C function `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce`
 >   (PQClean ML-DSA-44, pinned in `target/`) is bit-for-bit equal to the Cryptol model in `model/`,
->   for all inputs in `−2³¹·Q ≤ a ≤ Q·2³¹` (`make saw` exits 0; verified non-vacuous).
-> - **Isabelle (model ≡ spec): PARTIAL.** The integer-level math core is proven; the word-level
->   bridge is still open, so the end-to-end equivalence theorem is **not yet proven** (`oops`).
+>   for all inputs in `−2³¹·Q ≤ a ≤ Q·2³¹` (verified non-vacuous).
+> - **Isabelle (model ≡ spec): DONE.** The cryptol-to-isabelle-lifted model satisfies the
+>   independently-written spec `is_montgomery_reduction` — `2³²·r ≡ a (mod Q)` and strict `−Q < r < Q`
+>   — for every input in the half-open domain `−2³¹·Q ≤ a < 2³¹·Q`. No `sorry`, no `oops`.
 >
-> **Not proven:** end-to-end model≡spec, the other reduction primitives, the forward NTT, optimized
-> code, any constant-time / side-channel property. While doing this we also found a minor off-by-one
-> in PQClean's `montgomery_reduce` doc-comment bound (see `docs/ASSUMPTIONS.md`, OF-1). Every claim is
-> only as strong as the assumptions in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
+> Chaining the two: **the deployed C `montgomery_reduce` computes a correct Montgomery residue mod Q**
+> (for that input range). **Not in scope:** the other reduction primitives, the forward NTT, optimized
+> code, any constant-time / side-channel property. We also found a minor off-by-one in PQClean's
+> `montgomery_reduce` doc-comment bound at the inclusive endpoint (see `docs/ASSUMPTIONS.md`, OF-1).
+> Every claim is only as strong as the assumptions in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
 ## Why this is different
 
@@ -46,7 +48,7 @@ It also deliberately targets **ML-DSA**, which is less completely verified than 
    Cryptol model  ──(2) SAW: prove C ≡ Cryptol──►  ✔ (montgomery_reduce)
           │  (3) cryptol-to-isabelle
           ▼
-   Isabelle model ──(4) prove model ≡ FIPS spec──►  ☐ not done yet
+   Isabelle model ──(4) prove model ≡ FIPS spec──►  ✔ (montgomery_reduce)
                                   ▲
                 Spec in Isabelle (written independently; NO Apple
                 artifacts used; see spec/README.md)
@@ -59,9 +61,10 @@ Full detail in [`docs/PIPELINE.md`](docs/PIPELINE.md).
 Requires macOS on Apple Silicon (the pinned toolchain; see `docs/ASSUMPTIONS.md`).
 
 ```bash
-./scripts/setup.sh        # pin & install SAW, Cryptol, Isabelle, cryptol-to-isabelle into .tools/
-make saw                  # the verified step today: prove C ≡ Cryptol; non-zero exit = proof failed
-# make verify             # whole pipeline incl. the Isabelle leg — NOT green yet (leg unfinished)
+./scripts/setup.sh                  # pin & install SAW, Cryptol, Isabelle, cryptol-to-isabelle
+./scripts/setup_isabelle_cryptol.sh # AFP + build the SAW 'Cryptol' Isabelle session (heavy, ~20min, once)
+make verify                         # whole pipeline: SAW (C≡Cryptol) + Isabelle (model≡spec); non-zero = a proof failed
+# make saw                          # just the SAW leg (fast; no Isabelle needed)
 ```
 
 ## Layout

@@ -35,7 +35,10 @@ fetch() {  # fetch <url> <dest-file>
   local url="$1" dest="$2"
   if [[ -f "$dest" ]]; then echo ">> cached: $dest"; return; fi
   echo ">> downloading $url"
-  curl -fL --retry 3 -o "$dest.partial" "$url"
+  # Robust against flaky mirrors (large Isabelle/AFP tarballs): retry all transient errors and
+  # resume partial transfers (-C -) rather than restarting the whole download on a reset.
+  curl -fL --retry 8 --retry-all-errors --retry-delay 5 --connect-timeout 30 \
+       -C - -o "$dest.partial" "$url"
   mv "$dest.partial" "$dest"
 }
 

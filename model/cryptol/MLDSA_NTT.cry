@@ -21,7 +21,6 @@
 
 module MLDSA_NTT where
 
-type N = 256
 q : Integer
 q = 8380417
 
@@ -64,6 +63,7 @@ mont_in_range a = (a >=$ lo) && (a <=$ hi)
     lo = - hi
 
 // --- out of scope (v1): forward NTT ----------------------------------------------------
-// Deliberately not modeled this session; do not rely on it. Kept as a typed placeholder.
-ntt : [N]Integer -> [N]Integer
-ntt coeffs = error "out of scope for v1: forward NTT not modeled yet"
+// The forward NTT (params N = 256, etc.) is deliberately NOT modeled this session. It is
+// omitted entirely rather than left as an `error` stub, because such a stub does not survive
+// the cryptol-to-isabelle lift ("Extra variables on rhs: error"). It will be added when the
+// NTT comes into scope.

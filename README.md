@@ -1,28 +1,39 @@
 # Assay
 
-**Formally verifying deployed post-quantum cryptographic code against its FIPS specification.**
+**Machine-checking a post-quantum reference-C arithmetic primitive against its specification, with an Apple-style SAW → Cryptol → Isabelle pipeline.**
 
-Assay applies the SAW → Cryptol → Isabelle verification pipeline — the same approach Apple
-open-sourced for `corecrypto` in May 2026 — to *third-party, deployed* C implementations of
-ML-DSA (FIPS 204). The goal is to prove that the arithmetic subroutines most prone to subtle
-bugs are mathematically equivalent to the standard.
+Assay applies an Apple-style SAW → Cryptol → Isabelle verification pipeline (the structure Apple
+used for its 2026 `corecrypto` work — **no Apple code or theories are used here; our spec is written
+independently from FIPS 204**) to the **PQClean reference C** for ML-DSA (FIPS 204). Scope today is
+**one scalar arithmetic primitive**, `montgomery_reduce` — an implementation device the FIPS-204 NTT
+relies on (Montgomery reduction is not itself defined in FIPS 204). **This is not the optimized /
+assembly code shipped in most products** (AVX2, aarch64-asm, mldsa-native); that is a later goal
+(see Roadmap v2). **The NTT itself is not yet modeled.**
 
-> Status: **early / work in progress.** v1 targets a single subroutine (see Roadmap).
+> Status: **early / work in progress.** Scope today = the single function `montgomery_reduce` (NOT
+> the NTT, NOT the other reduction primitives, NOT a full algorithm).
 >
-> **What is actually proven today (tool-checked):** SAW proves the C function
-> `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce` (PQClean ML-DSA-44, pinned in `target/`) is bit-for-bit
-> equivalent to the Cryptol model in `model/`, for all inputs in the documented range
-> `−2³¹·Q ≤ a ≤ Q·2³¹` (`make saw` exits 0; verified non-vacuous). **Not yet proven:** the Isabelle
-> leg (model ≡ FIPS-204 spec), the other reduction primitives, and the forward NTT. Every claim is
+> **What is actually proven today (tool-checked):**
+> - **SAW (C ≡ Cryptol): DONE.** SAW proves the C function `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce`
+>   (PQClean ML-DSA-44, pinned in `target/`) is bit-for-bit equal to the Cryptol model in `model/`,
+>   for all inputs in `−2³¹·Q ≤ a ≤ Q·2³¹` (`make saw` exits 0; verified non-vacuous).
+> - **Isabelle (model ≡ spec): PARTIAL.** The integer-level math core is proven; the word-level
+>   bridge is still open, so the end-to-end equivalence theorem is **not yet proven** (`oops`).
+>
+> **Not proven:** end-to-end model≡spec, the other reduction primitives, the forward NTT, optimized
+> code, any constant-time / side-channel property. While doing this we also found a minor off-by-one
+> in PQClean's `montgomery_reduce` doc-comment bound (see `docs/ASSUMPTIONS.md`, OF-1). Every claim is
 > only as strong as the assumptions in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 
 ## Why this is different
 
 Most formally verified PQC (libcrux, HACL\*, formosa-mlkem) is written in a research language
 (F\*, Jasmin) and *extracts* C, or verifies generated assembly. Assay instead verifies
-**hand-written C that is already shipping** — directly against the spec — which is the
-least-covered, highest-value surface in the verified-crypto landscape, and exactly what Apple's
-newly released toolchain is built to attack.
+**existing hand-written C** (PQClean's reference implementation, the basis many libraries derive
+from) directly against a spec. The longer-term aim (Roadmap v2) is to point the same pipeline at the
+**optimized/assembly** code that is actually deployed — that is where a real bug is most likely and
+where this approach earns its keep. Today's scope is deliberately one small primitive, done honestly
+end-to-end, rather than broad claims.
 
 It also deliberately targets **ML-DSA**, which is less completely verified than ML-KEM.
 
@@ -66,11 +77,12 @@ make saw                  # the verified step today: prove C ≡ Cryptol; non-ze
 
 ## Tools
 
-Built on open tools from Galois and Apple:
+Built on open tools from Galois:
 [SAW + Cryptol](https://github.com/GaloisInc/saw-script),
-the `cryptol-to-isabelle` translator (saw-script v1.5.1),
-[Isabelle](https://isabelle.in.tum.de/), and Apple's published
-[corecrypto verification libraries](https://github.com/apple/corecrypto/tree/2026-05).
+the `cryptol-to-isabelle` translator (saw-script v1.5.1), and
+[Isabelle](https://isabelle.in.tum.de/) (+ AFP). The pipeline *structure* mirrors Apple's published
+[corecrypto verification approach](https://github.com/apple/corecrypto/tree/2026-05), but **no Apple
+code or theory files are used** — the Isabelle spec is written independently from FIPS 204.
 
 ## Licensing
 

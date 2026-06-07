@@ -1,15 +1,18 @@
 # Isabelle spec & equivalence proof
 
-Contains the FIPS-204 NTT specification in Isabelle and the proof that the (translated) Cryptol
-model is equivalent to it.
+Contains an independent Isabelle specification of the ML-DSA **Montgomery-reduction** primitive
+(`MLDSA_NTT_Spec.thy`) and the in-progress proof that the cryptol-to-isabelle-lifted model
+(`MLDSA_NTT.thy`) satisfies it (`Assay_Equivalence.thy`). NOTE: this is the reduction primitive, not
+the full NTT (the NTT spec is future work despite the file naming).
 
 ## Reusing Apple's formalization
-Apple released FIPS formalizations and lemma libraries with corecrypto (2026-05 branch).
-**Before importing any of it**, confirm the license on the specific theory file:
-some pieces are under a *restricted evaluation license*, others are permissive. Record what you
-reused and under which license here:
+**Decision (2026-06-07): we reuse NOTHING from Apple.** The spec is written **independently** from
+FIPS 204 / the Dilithium definition of Montgomery reduction. No Apple corecrypto theory files or
+lemma libraries are imported. (An independent spec is the stronger, more defensible artifact, and
+sidesteps Apple's restricted evaluation-license pieces entirely.)
 
-- Reused theory: <FILL IN> — license: <FILL IN> — source commit: <FILL IN>
+- Reused Apple theories: **none.**
 
-If licensing is unclear or restrictive, write the spec independently from FIPS 204 and say so —
-an independent spec is itself a stronger, more defensible artifact.
+The only external Isabelle dependency is the Archive of Formal Proofs (AFP `Word_Lib`,
+`Berlekamp_Zassenhaus`), pulled in transitively by the SAW-provided `Cryptol` support session that
+the `cryptol-to-isabelle` output imports (installed by `scripts/setup_isabelle_cryptol.sh`).

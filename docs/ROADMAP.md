@@ -4,10 +4,13 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
 
 ## v1 — prove one subroutine (the finishable win)
 - Target: forward **NTT** + the modular reduction it relies on, in **pqclean's reference ML-DSA C**.
+  (Started even smaller: `montgomery_reduce` alone — SAW leg done, Isabelle leg in progress.)
+- NB: `montgomery_reduce` is an *implementation device* the FIPS-204 NTT relies on (Montgomery
+  reduction is not itself specified in FIPS 204) — not a "FIPS-numbered sub-algorithm". The NTT is
+  the FIPS-204 algorithm; we verify the arithmetic primitive underneath it first.
 - Why this target: clean, readable C (SAW reasons about it well), upstream of liboqs →
-  OpenSSL/BoringSSL adjacency (real-world relevance), and a self-contained, deterministic,
-  FIPS-204-numbered sub-algorithm with no message-size dependence (sidesteps the SAW
-  message-size limitation Apple flagged).
+  OpenSSL/BoringSSL adjacency (real-world relevance), and self-contained, deterministic, with no
+  message-size dependence (sidesteps the SAW message-size limitation Apple flagged).
 - Done = `make verify` checks green in CI, ASSUMPTIONS.md complete, writeup drafted.
 
 ## v2 — optimized ≡ reference (the credibility + bug-hunt step)

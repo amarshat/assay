@@ -1,0 +1,27 @@
+name: saw
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Fast gating check on EVERY push/PR: the SAW leg — C montgomery_reduce == Cryptol model.
+# (The heavy Isabelle leg lives in verify.yml, which only runs when proof files change.)
+jobs:
+  saw:
+    runs-on: macos-15   # Apple Silicon: matches the pinned arm64 SAW binary
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache toolchain (.tools)
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-saw1.5.1-${{ runner.os }}-${{ hashFiles('scripts/setup.sh') }}
+      - name: Set up toolchain (SAW + clang; Isabelle skipped)
+        run: SKIP_ISABELLE=1 ./scripts/setup.sh
+      - name: Reject proof holes (no `sorry`)
+        run: |
+          if grep -rn --include='*.thy' '\bsorry\b' spec/; then
+            echo "::error::Found 'sorry' (proof hole) in spec/."; exit 1
+          fi
+      - name: Prove C == Cryptol model (SAW)
+        run: make saw

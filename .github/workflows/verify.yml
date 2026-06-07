@@ -1,39 +1,32 @@
 name: verify
 on:
+  # Run the full pipeline automatically only when proof-relevant files change (the heavy AFP/Isabelle
+  # build is cached, so these runs are usually fast; doc/logo commits don't trigger it). Plus manual.
   push:
+    paths:
+      - 'spec/**'
+      - 'model/**'
+      - 'proof/**'
+      - 'target/**'
+      - 'scripts/**'
+      - 'Makefile'
+      - '.github/workflows/verify.yml'
   pull_request:
-  workflow_dispatch:   # the heavy full-pipeline job runs only when manually triggered
+    paths:
+      - 'spec/**'
+      - 'model/**'
+      - 'proof/**'
+      - 'target/**'
+      - 'scripts/**'
+      - 'Makefile'
+      - '.github/workflows/verify.yml'
+  workflow_dispatch:
 
-# Two jobs:
-#  - saw:    runs on every push/PR. Fast (~1 min cached) — the SAW leg, C montgomery_reduce ==
-#            Cryptol model. This is the gating check.
-#  - verify: runs ONLY on manual dispatch (Actions tab -> Run workflow). Full pipeline — SAW +
-#            Isabelle (model == FIPS/math spec). Heavy: first run downloads Isabelle + AFP and builds
-#            the SAW 'Cryptol' session (~45-60 min on a CI runner), then cached. Kept off per-push CI
-#            so pushes stay fast and reliably green; trigger it on demand to re-confirm the full proof.
-#            Both jobs run on macOS Apple Silicon (matches the pinned arm64 SAW binary).
+# Full pipeline — SAW (C == Cryptol) + Isabelle (model == FIPS/math spec). First run on a fresh cache
+# downloads Isabelle + AFP and builds the SAW 'Cryptol' session (~45-60 min on a CI runner); cached
+# after, so subsequent runs are fast. macOS Apple Silicon (matches the pinned arm64 SAW binary).
 jobs:
-  saw:
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cache toolchain (.tools)
-        uses: actions/cache@v4
-        with:
-          path: .tools
-          key: tools-saw1.5.1-${{ runner.os }}-${{ hashFiles('scripts/setup.sh') }}
-      - name: Set up toolchain (SAW + clang; Isabelle skipped)
-        run: SKIP_ISABELLE=1 ./scripts/setup.sh
-      - name: Reject proof holes (no `sorry`)
-        run: |
-          if grep -rn --include='*.thy' '\bsorry\b' spec/; then
-            echo "::error::Found 'sorry' (proof hole) in spec/."; exit 1
-          fi
-      - name: Prove C == Cryptol model (SAW)
-        run: make saw
-
   verify:
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-15
     timeout-minutes: 180
     env:

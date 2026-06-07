@@ -14,7 +14,9 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
 - Done = `make verify` checks green in CI, ASSUMPTIONS.md complete, writeup drafted.
 
 ## v2 — optimized ≡ reference (the credibility + bug-hunt step)
-- Re-point the proof at **mldsa-native's optimized C**; prove optimized ≡ reference.
+- Re-point the proof at **PQ Code Package's `mldsa-native`** optimized C; prove optimized ≡ reference.
+  (PQ Code Package is the maintained successor the deprecated PQClean now points to — and it is the
+  code increasingly actually deployed, so this is the genuine "verify deployed optimized code" step.)
 - This is where Apple-style "verify hand-optimized deployed code" credibility lives, and where
   a real bug is most likely to surface.
 

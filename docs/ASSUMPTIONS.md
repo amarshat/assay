@@ -94,8 +94,12 @@ Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform
     butterflies) feed products bounded well below `2^31*Q`, so the endpoint is not exercised in
     practice. The reference is mathematically correct; only the stated strict bound at the inclusive
     endpoint is wrong (the true guarantee over the inclusive domain is `-Q <= r <= Q`).
-  - Disclosure: **do NOT auto-file upstream** (CLAUDE.md). Surfaced to the maintainer (human) on
-    2026-06-07. Decide deliberately whether/how to report to PQClean / pq-crystals.
+  - Origin & disclosure routing: the identical `montgomery_reduce` comment is in
+    **`pq-crystals/dilithium/ref/reduce.c`** (verified 2026-06-07) — PQClean only re-namespaces it.
+    So the finding originates upstream and also affects PQ Code Package `mldsa-native` and liboqs.
+    PQClean is being archived (July 2026), so the right disclosure home is **pq-crystals/dilithium**,
+    not PQClean. **Do NOT auto-file upstream** (CLAUDE.md); surfaced to the maintainer (human) on
+    2026-06-07 to decide deliberately.
   - Impact on Assay: the SAW leg (C ≡ Cryptol model) is unaffected — it asserts no bound. The
     Isabelle correctness spec is stated over the **half-open** domain `-2^31*Q <= a < 2^31*Q`, where
     the strict `-Q < r < Q` is actually true; see `spec/isabelle/MLDSA_NTT_Spec.thy` (`mont_input_ok`).

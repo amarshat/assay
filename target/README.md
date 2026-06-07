@@ -3,6 +3,18 @@
 The implementation being verified is **vendored and pinned** here so the proof is reproducible
 against an exact, unmodifiable snapshot.
 
+## Note on PQClean's deprecation (2026-06)
+PQClean announced it will be archived read-only in **July 2026** (recommending the
+[PQ Code Package](https://github.com/pq-code-package) for maintained PQC). **This does not affect
+Assay:** the target files are vendored into this directory (committed, SHA-256 recorded) and built
+locally, so nothing here fetches PQClean at build/CI time; and the pinned commit `202a8f9` remains
+readable even after the repo is archived. More importantly, this `reduce.c` is **verbatim
+`pq-crystals/dilithium` reference code** (PQClean only adds the `PQCLEAN_MLDSA44_CLEAN_` symbol
+prefix) — `montgomery_reduce` and its doc comment are byte-identical to
+`pq-crystals/dilithium/ref/reduce.c`. So the verification targets the canonical Dilithium reference
+shared by PQClean, PQ Code Package's `mldsa-native`, and liboqs — not a single dying distribution.
+The natural v2 target (optimized ≡ reference) is **PQ Code Package `mldsa-native`**.
+
 ## v1 target (this session: modular reduction only — NOT the NTT yet)
 - Source: **PQClean** reference ML-DSA (ML-DSA-44), the `clean` C implementation.
 - Subsystem: the **modular-reduction primitives** in `reduce.c`. The forward NTT (`ntt.c`) is

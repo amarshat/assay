@@ -20,6 +20,17 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   discharged under exactly this precondition (`mont_in_range` in the model); equivalence outside it
   is NOT claimed by the proof. (Empirically the Cryptol model is a bit-exact transcription that also
   matches the C outside the range, but that is not what SAW asserts.)
+- **Call-site reachability (practical-safety context).** The *verified contract* (`|a| <= 2^31*Q
+  ~= 2^54`) is ~256x wider than what ML-DSA actually feeds this function: pointwise-multiply and NTT
+  butterflies produce products `<~ Q^2 ~= 2^46`. So OF-1's problematic endpoint (`a = 2^31*Q`) is
+  unreachable in any real ML-DSA execution; the reference is mathematically correct in practice.
+- **Parameter-set independence.** `montgomery_reduce` is byte-identical across ML-DSA-44/65/87 (same
+  `Q`, `QINV`, `reduce.c`); the proof holds for all three. The "-44" pin is cosmetic for this function.
+- **C undefined-behavior / overflow setting.** The SAW proof is over the LLVM bitcode emitted by
+  clang `-O0`; we reason about two's-complement word arithmetic as crucible-llvm models it. In the
+  documented input range no signed overflow occurs (|a|, |t*Q| < 2^54, the difference < 2^63), so the
+  result is unaffected either way; we do not currently make an explicit "no signed-overflow UB" claim
+  (a hardening item — Apple's corecrypto contracts assert absence of UB explicitly).
 - Anything not listed as proven is, explicitly, NOT proven.
 
 ## Modeling choices for `montgomery_reduce` (model/cryptol/MLDSA_NTT.cry)

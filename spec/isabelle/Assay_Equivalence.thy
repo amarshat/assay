@@ -263,6 +263,101 @@ proof -
     using lo hi by (auto simp: mod_add_self2)
 qed
 
+\<comment> \<open>in this context \<open><<\<close> is the cryptol/word \<open>left_shift\<close> (Rotate_Shift), not Word's \<open>shiftl\<close>;
+    for a word it unfolds to \<open>shiftl\<close>, which on 1 by 22 is 0x400000\<close>
+lemma shl22: "left_shift (1 :: 32 word) 22 = 0x400000"
+proof -
+  have "left_shift (1 :: 32 word) 22 = shiftl 1 22"
+    by (simp add: left_shift_def right_shift_def)
+  also have "\<dots> = 0x400000"
+    by (rule bit_word_eqI) (auto simp: bit_simps shiftl_def)
+  finally show ?thesis .
+qed
+
+\<comment> \<open>reduce32 (Barrett-style): residue-preserving, output in the TRUE window [-6283009, 6283008].
+    The output bound (OF-2: the C doc says -6283008) is the substantive part: a careful
+    floor-division interval argument with a case split at the extreme quotient t = -256.\<close>
+lemma reduce32_correct:
+  fixes a :: "(32, bool) seq"
+  assumes dom: "reduce32_input_ok (sint_seq a)"
+  shows "is_reduce32 (sint_seq a) (sint_seq (reduce32 a))"
+proof -
+  define aw :: "32 word" where "aw = seq_to_word a"
+  define a' :: int where "a' = sint aw"
+  have A: "sint_seq a = a'" unfolding aw_def a'_def by (rule probe_sint_seq)
+  have lo31: "- 2147483648 \<le> a'" and hi31: "a' < 2147483648"
+    unfolding a'_def using sint_greater_eq[of aw] sint_lt[of aw] by simp_all
+  have dom': "a' \<le> 2143289343" using dom A unfolding reduce32_input_ok_def by simp
+  \<comment> \<open>the shifted addend does not overflow int32, so its signed value is exactly a' + 2^22\<close>
+  have add_eq: "aw + 0x400000 = word_of_int (a' + 4194304)"
+    unfolding a'_def by (metis of_int_add of_int_numeral of_int_sint)
+  have sint_add: "sint (aw + 0x400000) = a' + 4194304"
+    unfolding add_eq by (rule sint_of_int_eq) (use lo31 dom' in simp)+
+  \<comment> \<open>the arithmetic shift is exactly floor-division by 2^23\<close>
+  define t :: int where "t = (a' + 4194304) div 8388608"
+  have sint_t: "sint (sshiftr (aw + 0x400000) 23) = t"
+    unfolding t_def using sint_add by (simp add: sshiftr_div_2n)
+  \<comment> \<open>quotient bounds from the input range\<close>
+  have aplo: "- 2143289344 \<le> a' + 4194304" using lo31 by simp
+  have aphi: "a' + 4194304 \<le> 2147483647" using dom' by simp
+  have thi: "t \<le> 255"
+  proof -
+    have "(a' + 4194304) div 8388608 \<le> 2147483647 div 8388608"
+      using aphi by (auto intro: zdiv_mono1)
+    thus ?thesis unfolding t_def by simp
+  qed
+  have tlo: "- 256 \<le> t"
+  proof -
+    have "(- 2143289344 :: int) div 8388608 \<le> (a' + 4194304) div 8388608"
+      using aplo by (auto intro: zdiv_mono1)
+    thus ?thesis unfolding t_def by simp
+  qed
+  \<comment> \<open>the integer output bound (the hard interval fact)\<close>
+  define s :: int where "s = (a' + 4194304) mod 8388608"
+  have eqn: "a' + 4194304 = 8388608 * t + s"
+    unfolding t_def s_def by simp
+  have s0: "0 \<le> s" and s1: "s < 8388608" unfolding s_def by simp_all
+  have rfix: "a' - t * 8380417 = 8191 * t + s - 4194304" using eqn by (simp add: algebra_simps)
+  have BND: "- 6283009 \<le> a' - t * 8380417 \<and> a' - t * 8380417 \<le> 6283008"
+  proof -
+    have up: "8191 * t + s - 4194304 \<le> 6283008" using thi s1 by linarith
+    have low: "- 6283009 \<le> 8191 * t + s - 4194304"
+    proof (cases "t \<le> - 256")
+      case True
+      hence te: "t = - 256" using tlo by linarith
+      show ?thesis using te eqn s0 lo31 by linarith
+    next
+      case False
+      hence "- 255 \<le> t" by simp
+      thus ?thesis using s0 by linarith
+    qed
+    show ?thesis using up low rfix by simp
+  qed
+  \<comment> \<open>collapse the word arithmetic to the integer value, using BND for the no-overflow fit\<close>
+  have tw_eq: "sshiftr (aw + 0x400000) 23 = word_of_int t"
+    using sint_t by (metis of_int_sint)
+  have hom: "aw - sshiftr (aw + 0x400000) 23 * 0x7FE001 = word_of_int (a' - t * 8380417)"
+    unfolding tw_eq a'_def
+    by (metis of_int_diff of_int_mult of_int_numeral of_int_sint)
+  have R: "sint_seq (reduce32 a) = a' - t * 8380417"
+  proof -
+    have "sint_seq (reduce32 a) = sint (aw - sshiftr (aw + 0x400000) 23 * 0x7FE001)"
+      unfolding reduce32_def Q32_def aw_def
+      by (simp add: probe_sint_seq word_seq_convs seq_to_word shl22)
+    also have "\<dots> = sint (word_of_int (a' - t * 8380417) :: 32 word)"
+      using hom by simp
+    also have "\<dots> = a' - t * 8380417"
+      by (rule sint_of_int_eq) (use BND in simp)+
+    finally show ?thesis .
+  qed
+  \<comment> \<open>residue preservation: a' - t*Q \<equiv> a' (mod Q)\<close>
+  have cong: "(a' - t * 8380417) mod 8380417 = a' mod 8380417"
+    using mod_mult_self1[of a' "- t" 8380417] by (simp add: algebra_simps)
+  show ?thesis
+    unfolding is_reduce32_def MLDSA_NTT_Spec.q_def A R
+    using BND cong by simp
+qed
+
 end
 
 end

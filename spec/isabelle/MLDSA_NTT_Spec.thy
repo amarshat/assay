@@ -35,9 +35,18 @@ definition is_montgomery_reduction :: "int \<Rightarrow> int \<Rightarrow> bool"
 definition is_caddq :: "int \<Rightarrow> int \<Rightarrow> bool" where
   "is_caddq a r \<longleftrightarrow> r mod q = a mod q \<and> (-q \<le> a \<and> a < q \<longrightarrow> 0 \<le> r \<and> r < q)"
 
-(* reduce32 (Barrett-style): r \<equiv> a (mod q) with the documented centered output window. *)
+(* Input domain for reduce32, matching the SAW leg's precondition: the one-sided bound that keeps
+   a + (1<<22) from overflowing int32. (a >= -2^31 holds automatically for an int32 value.) *)
+definition reduce32_input_ok :: "int \<Rightarrow> bool" where
+  "reduce32_input_ok a \<longleftrightarrow> a \<le> 2143289343"  (* 2^31 - 2^22 - 1 *)
+
+(* reduce32 (Barrett-style): r \<equiv> a (mod q) within the TRUE reachable output window.
+   NB: PQClean's reduce.c comment claims [-6283008, 6283008], but under its (one-sided) precondition
+   a <= 2^31-2^22-1 the input a = -2143289344 is admissible and gives reduce32 a = -6283009, one below
+   the documented bound (see docs/ASSUMPTIONS.md, finding OF-2). The documented bound holds only under
+   a symmetric |a| <= 2^31-2^22-1. We specify the honest reachable window, which is asymmetric. *)
 definition is_reduce32 :: "int \<Rightarrow> int \<Rightarrow> bool" where
-  "is_reduce32 a r \<longleftrightarrow> r mod q = a mod q \<and> -6283008 \<le> r \<and> r \<le> 6283008"
+  "is_reduce32 a r \<longleftrightarrow> r mod q = a mod q \<and> -6283009 \<le> r \<and> r \<le> 6283008"
 
 (* freeze = caddq \<circ> reduce32: the canonical representative in [0, q). *)
 definition is_freeze :: "int \<Rightarrow> int \<Rightarrow> bool" where

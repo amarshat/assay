@@ -139,3 +139,24 @@ Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform
   - Impact on Assay: the SAW leg (C ≡ Cryptol model) is unaffected — it asserts no bound. The
     Isabelle correctness spec is stated over the **half-open** domain `-2^31*Q <= a < 2^31*Q`, where
     the strict `-Q < r < Q` is actually true; see `spec/isabelle/MLDSA_NTT_Spec.thy` (`mont_input_ok`).
+- **OF-2 (2026-06-08): PQClean `reduce32` doc-comment output bound is off by one on the low end
+  under its own (one-sided) precondition.** The comment in `target/pqclean/reduce.c` states, for
+  `a <= 2^31 - 2^22 - 1`, that it returns `r` with **`-6283008 <= r <= 6283008`**. But the stated
+  precondition is one-sided (no lower bound), so `a = -2143289344` is admissible (it is a valid
+  `int32`, `>= -2^31`, and satisfies `a <= 2^31-2^22-1`), and there `reduce32(a) = -6283009`,
+  which violates the stated lower bound by one. Verified by direct computation against the formula
+  (`scripts`-level check, 2026-06-08): min over `a in [-2^31, 2^31-2^22-1]` is `-6283009` at
+  `a=-2143289344`; max is `6283008` at `a=2143289343`. The congruence `r ≡ a (mod Q)` still holds.
+  - Root cause: the documented bound `[-6283008, 6283008]` is correct only under the **symmetric**
+    precondition `|a| <= 2^31-2^22-1` (which excludes `a=-2143289344`, since
+    `2143289344 > 2143289343`). The doc's one-sided precondition is too weak for its postcondition —
+    either the precondition should be symmetric or the postcondition low end should be `-6283009`.
+  - Severity: **documentation/contract only, not a security or functional bug** (same class as OF-1).
+    The reduced value is always a correct residue; only the stated tightness is off, and ML-DSA call
+    sites feed `reduce32` magnitudes far below this endpoint.
+  - Origin & disclosure routing: same as OF-1 — identical comment in `pq-crystals/dilithium/ref`;
+    route to **pq-crystals/dilithium**, not PQClean (archiving). **Do NOT auto-file** (CLAUDE.md);
+    surfaced to the human 2026-06-08.
+  - Impact on Assay: the SAW leg asserts no output bound, so it is unaffected. The Isabelle
+    `is_reduce32` spec uses the **true reachable** window `-6283009 <= r <= 6283008` (not the doc's
+    `-6283008`), proven over the SAW domain `a <= 2^31-2^22-1`; see `spec/isabelle/MLDSA_NTT_Spec.thy`.

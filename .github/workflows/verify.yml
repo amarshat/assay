@@ -1,54 +1,27 @@
 name: verify
 on:
-  # Run the full pipeline automatically only when proof-relevant files change (the heavy AFP/Isabelle
-  # build is cached, so these runs are usually fast; doc/logo commits don't trigger it). Plus manual.
-  push:
-    paths:
-      - 'spec/**'
-      - 'model/**'
-      - 'proof/**'
-      - 'target/**'
-      - 'scripts/**'
-      - 'Makefile'
-      - '.github/workflows/verify.yml'
-  pull_request:
-    paths:
-      - 'spec/**'
-      - 'model/**'
-      - 'proof/**'
-      - 'target/**'
-      - 'scripts/**'
-      - 'Makefile'
-      - '.github/workflows/verify.yml'
-  workflow_dispatch:
+  workflow_dispatch:   # full pipeline is manual-only — it's a heavy ~60-90 min Isabelle/AFP build
 
-# Full pipeline — SAW (C == Cryptol) + Isabelle (model == FIPS/math spec). First run on a fresh cache
-# downloads Isabelle + AFP and builds the SAW 'Cryptol' session (~45-60 min on a CI runner); cached
-# after, so subsequent runs are fast. macOS Apple Silicon (matches the pinned arm64 SAW binary).
+# Full pipeline — SAW (C == Cryptol) + Isabelle (model == FIPS/math spec). Run on demand from the
+# Actions tab ("Run workflow") for a complete re-verification. The everyday gating check is the
+# separate, fast `saw` workflow that runs on every push. We cache only `.tools` (the downloaded
+# toolchain); caching the Isabelle heaps does NOT make `isabelle build` skip the AFP rebuild on
+# hosted runners, so the AFP/Cryptol session is (re)built each run (~50-90 min). macOS Apple Silicon
+# (matches the pinned arm64 SAW binary).
 jobs:
   verify:
     runs-on: macos-15
     timeout-minutes: 180
-    env:
-      # keep Isabelle's heaps + component registrations inside the workspace so they cache
-      ISABELLE_HOME_USER: ${{ github.workspace }}/.isabelle_home
     steps:
       - uses: actions/checkout@v4
-      - name: Cache toolchain + AFP + Isabelle heaps
+      - name: Cache downloaded toolchain (.tools)
         uses: actions/cache@v4
         with:
-          path: |
-            .tools
-            .isabelle_home
-          # Unique key per run so a COMPLETE build always gets saved (actions/cache never overwrites
-          # an existing key); restore-keys falls back to the newest prior cache with the same prefix.
-          # This avoids getting stuck restoring a partial cache and rebuilding (~50min) every time.
-          key: full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}-${{ github.run_id }}
-          restore-keys: |
-            full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}-
+          path: .tools
+          key: tools-full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}
       - name: Set up toolchain (SAW, Cryptol, Isabelle, clang)
         run: ./scripts/setup.sh
-      - name: Build AFP + SAW 'Cryptol' Isabelle session (cached after first run)
+      - name: Build AFP + SAW 'Cryptol' Isabelle session
         run: ./scripts/setup_isabelle_cryptol.sh
       - name: Reject proof holes (no `sorry`)
         run: |

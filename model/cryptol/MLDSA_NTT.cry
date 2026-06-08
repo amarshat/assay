@@ -1,23 +1,12 @@
-// Cryptol model of the ML-DSA (ML-DSA-44) modular-reduction primitive.
+// Cryptol model of the ML-DSA-44 reduce.c primitives and the forward NTT (ntt.c), checked
+// bit-for-bit against the vendored PQClean C by SAW (proof/saw/mldsa_ntt.saw).
 //
-// SCOPE (v1, this session): the forward NTT is NOT modeled yet. We model only
-// `montgomery_reduce`, the reduction the forward NTT relies on, to be checked bit-for-bit
-// against the vendored PQClean C by SAW (proof/saw/mldsa_ntt.saw).
+// Modeled at exact C bit widths (montgomery_reduce is [64]->[32], etc.): SAW checks bit-exact
+// equivalence, and these algorithms depend on two's-complement truncation and the signed shift.
+// Typechecking this module proves nothing on its own — the SAW run is what ties it to the C.
 //
-// STATUS: `montgomery_reduce` is SAW-VERIFIED equivalent to the C (make saw exits 0, 2026-06-06,
-// under the mont_in_range precondition). See docs/ASSUMPTIONS.md "Proof results". Typechecking
-// this module alone proves nothing — the SAW run is what establishes C ≡ this model.
-//
-// Target C (target/pqclean/reduce.c @ PQClean 202a8f9, ml-dsa-44/clean):
-//
-//   int32_t montgomery_reduce(int64_t a) {
-//       int32_t t;
-//       t = (int32_t)((uint64_t)a * (uint64_t)QINV);   // QINV = 58728449
-//       t = (a - (int64_t)t * Q) >> 32;                // Q = 8380417, arithmetic (signed) >>
-//       return t;
-//   }
-//
-// FIPS 204 parameters (ML-DSA): Q = 8380417, N = 256.
+// Target: PQClean ml-dsa-44/clean @ 202a8f9 (reduce.c, ntt.c). Q = 8380417, N = 256. Montgomery
+// reduction is an implementation device, not a FIPS-204 object.
 
 module MLDSA_NTT where
 
@@ -88,8 +77,48 @@ caddq a = a + ((a >>$ 31) && Q32)
 freeze : [32] -> [32]
 freeze a = caddq (reduce32 a)
 
-// --- out of scope (v1): forward NTT ----------------------------------------------------
-// The forward NTT (params N = 256, etc.) is deliberately NOT modeled this session. It is
-// omitted entirely rather than left as an `error` stub, because such a stub does not survive
-// the cryptol-to-isabelle lift ("Extra variables on rhs: error"). It will be added when the
-// NTT comes into scope.
+// --- forward NTT (ntt.c) --------------------------------------------------------------
+// Bit-exact model of the C forward NTT. 8 levels (len = 128 >> i for i = 0..7). At level i,
+// block b uses zetas[2^i + b], so the C's running counter k is exactly (2^i + b) — no threading
+// needed. Each level's butterflies are independent, so we build the new array element-wise:
+// index m is a butterfly's "low" leg j when (m mod 2len) < len (partner m+len), else the "high"
+// leg j+len (partner m-len). Both legs of a pair use t = montgomery_reduce(zeta * a[high]).
+zetas : [256][32]
+zetas =
+  [ 0, 25847, -2608894, -518909, 237124, -777960, -876248, 466468, 1826347, 2353451, -359251, -2091905, 
+    3119733, -2884855, 3111497, 2680103, 2725464, 1024112, -1079900, 3585928, -549488, -1119584, 2619752, -2108549, 
+    -2118186, -3859737, -1399561, -3277672, 1757237, -19422, 4010497, 280005, 2706023, 95776, 3077325, 3530437, 
+    -1661693, -3592148, -2537516, 3915439, -3861115, -3043716, 3574422, -2867647, 3539968, -300467, 2348700, -539299, 
+    -1699267, -1643818, 3505694, -3821735, 3507263, -2140649, -1600420, 3699596, 811944, 531354, 954230, 3881043, 
+    3900724, -2556880, 2071892, -2797779, -3930395, -1528703, -3677745, -3041255, -1452451, 3475950, 2176455, -1585221, 
+    -1257611, 1939314, -4083598, -1000202, -3190144, -3157330, -3632928, 126922, 3412210, -983419, 2147896, 2715295, 
+    -2967645, -3693493, -411027, -2477047, -671102, -1228525, -22981, -1308169, -381987, 1349076, 1852771, -1430430, 
+    -3343383, 264944, 508951, 3097992, 44288, -1100098, 904516, 3958618, -3724342, -8578, 1653064, -3249728, 
+    2389356, -210977, 759969, -1316856, 189548, -3553272, 3159746, -1851402, -2409325, -177440, 1315589, 1341330, 
+    1285669, -1584928, -812732, -1439742, -3019102, -3881060, -3628969, 3839961, 2091667, 3407706, 2316500, 3817976, 
+    -3342478, 2244091, -2446433, -3562462, 266997, 2434439, -1235728, 3513181, -3520352, -3759364, -1197226, -3193378, 
+    900702, 1859098, 909542, 819034, 495491, -1613174, -43260, -522500, -655327, -3122442, 2031748, 3207046, 
+    -3556995, -525098, -768622, -3595838, 342297, 286988, -2437823, 4108315, 3437287, -3342277, 1735879, 203044, 
+    2842341, 2691481, -2590150, 1265009, 4055324, 1247620, 2486353, 1595974, -3767016, 1250494, 2635921, -3548272, 
+    -2994039, 1869119, 1903435, -1050970, -1333058, 1237275, -3318210, -1430225, -451100, 1312455, 3306115, -1962642, 
+    -1279661, 1917081, -2546312, -1374803, 1500165, 777191, 2235880, 3406031, -542412, -2831860, -1671176, -1846953, 
+    -2584293, -3724270, 594136, -3776993, -2013608, 2432395, 2454455, -164721, 1957272, 3369112, 185531, -1207385, 
+    -3183426, 162844, 1616392, 3014001, 810149, 1652634, -3694233, -1799107, -3038916, 3523897, 3866901, 269760, 
+    2213111, -975884, 1717735, 472078, -426683, 1723600, -1803090, 1910376, -1667432, -1104333, -260646, -3833893, 
+    -2939036, -2235985, -420899, -2286327, 183443, -976891, 1612842, -3545687, -554416, 3919660, -48306, -1362209, 
+    3937738, 1400424, -846154, 1976782 ]
+
+nttLevel : [16] -> [256][32] -> [256][32]
+nttLevel i a = [ bf m | m <- [0 .. 255] : [256][16] ]
+  where
+    len    = 128 >> i
+    twolen = 256 >> i
+    base   = 1  << i
+    bf : [16] -> [32]
+    bf m = if (m % twolen) < len
+             then (a @ m)         + montgomery_reduce (sext64 (zetas @ (base + (m / twolen)))       * sext64 (a @ (m + len)))
+             else (a @ (m - len)) - montgomery_reduce (sext64 (zetas @ (base + ((m - len) / twolen))) * sext64 (a @ m))
+
+ntt : [256][32] -> [256][32]
+ntt a0 = foldl step a0 ([0, 1, 2, 3, 4, 5, 6, 7] : [8][16])
+  where step a i = nttLevel i a

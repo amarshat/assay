@@ -358,6 +358,33 @@ proof -
     using BND cong by simp
 qed
 
+\<comment> \<open>freeze = caddq \<circ> reduce32, the canonical representative in [0, q). Compositional: reduce32's
+    output window [-6283009, 6283008] sits inside [-q, q), so caddq's precondition is met.\<close>
+lemma freeze_correct:
+  fixes a :: "(32, bool) seq"
+  assumes dom: "reduce32_input_ok (sint_seq a)"
+  shows "is_freeze (sint_seq a) (sint_seq (freeze a))"
+proof -
+  have r32: "is_reduce32 (sint_seq a) (sint_seq (reduce32 a))"
+    using dom by (rule reduce32_correct)
+  have cad: "is_caddq (sint_seq (reduce32 a)) (sint_seq (caddq (reduce32 a)))"
+    by (rule caddq_correct)
+  have c1: "sint_seq (reduce32 a) mod 8380417 = sint_seq a mod 8380417"
+   and b1: "- 6283009 \<le> sint_seq (reduce32 a)" and b2: "sint_seq (reduce32 a) \<le> 6283008"
+    using r32 unfolding is_reduce32_def MLDSA_NTT_Spec.q_def by simp_all
+  have c2: "sint_seq (caddq (reduce32 a)) mod 8380417 = sint_seq (reduce32 a) mod 8380417"
+    using cad unfolding is_caddq_def MLDSA_NTT_Spec.q_def by simp
+  have ante: "- 8380417 \<le> sint_seq (reduce32 a) \<and> sint_seq (reduce32 a) < 8380417"
+    using b1 b2 by linarith
+  have pos: "0 \<le> sint_seq (caddq (reduce32 a)) \<and> sint_seq (caddq (reduce32 a)) < 8380417"
+    using cad ante unfolding is_caddq_def MLDSA_NTT_Spec.q_def by simp
+  have fdef: "sint_seq (freeze a) = sint_seq (caddq (reduce32 a))"
+    by (simp add: freeze_def)
+  show ?thesis
+    unfolding is_freeze_def MLDSA_NTT_Spec.q_def fdef
+    using c1 c2 pos by simp
+qed
+
 end
 
 end

@@ -14,14 +14,18 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
 - Hard gate (composition soundness): `make lift-check` mechanizes the `cryptol-to-isabelle` step —
   regenerate the Isabelle model from the `.cry` SAW checks and diff against the committed theory, so
   the end-to-end chain has no eyeball-maintained link.
+- Forward NTT functional equivalence (DONE): SAW proves `ntt(a[256])` ≡ Cryptol `ntt` under
+  two's-complement wrapping (`-fwrapv` bitcode), montgomery_reduce as an uninterpreted override.
+  This shows the pipeline scales to the full 256-point transform. It does NOT prove overflow-freedom.
 
-## v1.5 — the forward NTT butterfly with coefficient-bound tracking
-- The first *cryptographically meaningful* claim: model one butterfly (and then `ntt()`/
-  `invntt_tomont()`), proving every `montgomery_reduce` input stays in range and no intermediate
-  overflows `int32` across all 256 coefficients / 8 levels.
-- This **bound-composition** property is the actual historical ML-DSA bug class (cf. ePrint
-  2026/1032's optimized-path overflow that survived KATs; Apple's missing-reduction InvNTT bug). It
-  is where verification first earns its keep, and it requires an Isabelle FIPS-204 NTT spec
+## v1.5 — forward NTT overflow-freedom + an Isabelle NTT spec
+- The remaining, *cryptographically meaningful* part: prove every `montgomery_reduce` input stays in
+  range and no intermediate overflows `int32` across all 256 coefficients / 8 levels — i.e. the
+  **coefficient-bound composition** invariant (this is what the `-fwrapv` functional-equivalence proof
+  deliberately sidesteps). Needs a montgomery_reduce output-bound (|t| < Q) carried through the
+  butterflies under an input bound.
+- This is the actual historical ML-DSA bug class (cf. ePrint 2026/1032's optimized-path overflow that
+  survived KATs; Apple's missing-reduction InvNTT bug). It also needs an Isabelle FIPS-204 NTT spec
   (negacyclic, 8-level) validated against FIPS 204 Algorithms 41–42 — itself a substantial formalization.
 
 ## v2 — optimized ≡ reference (the credibility + bug-hunt step)

@@ -12,21 +12,26 @@ PQC-Assay runs the same SAW → Cryptol → Isabelle pipeline Apple used for its
 against the PQClean reference C for ML-DSA (FIPS 204). It uses none of Apple's code or theories; the
 Isabelle spec is written from FIPS 204.
 
-Current scope is one arithmetic primitive, `montgomery_reduce`, plus the rest of `reduce.c`.
-Montgomery reduction is an implementation device the NTT uses; it is not defined in FIPS 204. The NTT
-is not modeled yet, and none of this is the optimized/assembly code that ships in production (see
-[Roadmap](docs/ROADMAP.md)).
+Current scope is the `reduce.c` arithmetic layer and the forward NTT's functional equivalence.
+Montgomery reduction is an implementation device the NTT uses; it is not defined in FIPS 204. None of
+this is the optimized/assembly code that ships in production (see [Roadmap](docs/ROADMAP.md)).
 
 ## What's proven
 
 `make verify` checks both legs (exit 0):
 
-- **SAW (C ≡ Cryptol)** — the whole `reduce.c` layer, bit-for-bit: `montgomery_reduce`
-  (`−2³¹·Q ≤ a ≤ Q·2³¹`), `reduce32` (`a ≤ 2³¹−2²²−1`), `caddq`, `freeze`. A mutation test confirms
-  the proof is non-vacuous, and CI diffs the lifted Isabelle model against the Cryptol model SAW checks.
+- **SAW (C ≡ Cryptol)** — bit-for-bit:
+  - The `reduce.c` layer: `montgomery_reduce` (`−2³¹·Q ≤ a ≤ Q·2³¹`), `reduce32` (`a ≤ 2³¹−2²²−1`),
+    `caddq`, `freeze` — these also assert no signed-overflow UB in range.
+  - The forward NTT `ntt(a[256])`, under two's-complement wrapping (`-fwrapv`). The NTT does
+    unreduced int32 add/sub that overflow for unbounded inputs, so this is functional equivalence,
+    not overflow-freedom (which needs coefficient-bound composition — see Roadmap v1.5).
+
+  A mutation test confirms the reduce proof is non-vacuous, and CI diffs the lifted Isabelle model
+  against the Cryptol model SAW checks.
 - **Isabelle (model ≡ spec)** — `montgomery_reduce` only: the lifted model meets
   `is_montgomery_reduction` (`2³²·r ≡ a (mod Q)` and `−Q < r < Q`) on `−2³¹·Q ≤ a < 2³¹·Q`, no
-  `sorry`/`oops`. The other three have SAW proofs but not the Isabelle leg yet.
+  `sorry`/`oops`. The others have SAW proofs but not the Isabelle leg yet.
 
 Chained, for `montgomery_reduce`: the C computes a correct Montgomery residue mod Q on that range.
 

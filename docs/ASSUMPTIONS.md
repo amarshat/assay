@@ -12,11 +12,13 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   Provenance noted in spec/README.md.
 
 ## Scope limits (v1)
-- **Scope is the reduce.c layer; nothing about the forward NTT is proven.** SAW proves all four
-  reduce.c primitives ≡ Cryptol model: `montgomery_reduce` (under its precondition), and `reduce32`
-  (under `a <= 2^31-2^22-1`), `caddq`, `freeze` (`caddq` unconditional; `freeze` inherits reduce32's
-  precondition). The Isabelle model≡spec leg currently covers `montgomery_reduce` only. The forward
-  NTT is NOT modeled or proven.
+- **Scope is the reduce.c layer plus forward-NTT functional equivalence.** SAW proves all four
+  reduce.c primitives ≡ Cryptol model (`montgomery_reduce` under its precondition; `reduce32` under
+  `a <= 2^31-2^22-1`; `caddq` unconditional; `freeze` compositional), AND the forward NTT
+  `ntt(a[256])` ≡ Cryptol `ntt` under two's-complement wrapping (see overflow note below). The
+  Isabelle model≡spec leg covers `montgomery_reduce` only. The forward NTT is proven equal to the
+  model but its **overflow-freedom / coefficient-bound composition is NOT proven** (the v1.5 task),
+  and there is no Isabelle spec for the NTT yet.
 - Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof IS
   discharged under exactly this precondition (`mont_in_range` in the model); equivalence outside it
   is NOT claimed by the proof. (Empirically the Cryptol model is a bit-exact transcription that also
@@ -27,11 +29,14 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   unreachable in any real ML-DSA execution; the reference is mathematically correct in practice.
 - **Parameter-set independence.** `montgomery_reduce` is byte-identical across ML-DSA-44/65/87 (same
   `Q`, `QINV`, `reduce.c`); the proof holds for all three. The "-44" pin is cosmetic for this function.
-- **C undefined-behavior / overflow setting.** The SAW proof is over the LLVM bitcode emitted by
-  clang `-O0`; we reason about two's-complement word arithmetic as crucible-llvm models it. In the
-  documented input range no signed overflow occurs (|a|, |t*Q| < 2^54, the difference < 2^63), so the
-  result is unaffected either way; we do not currently make an explicit "no signed-overflow UB" claim
-  (a hardening item — Apple's corecrypto contracts assert absence of UB explicitly).
+- **C undefined-behavior / overflow setting.** Two bitcodes are built (`scripts/build_bitcode.sh`):
+  - *default (`nsw`)* — used for the **reduce.c** proofs, which therefore DO assert absence of
+    signed-overflow UB in their documented input ranges (`montgomery_reduce` under `mont_in_range`,
+    `reduce32` under `a <= 2^31-2^22-1`).
+  - *`-fwrapv`* — used for the **forward NTT** proof. The NTT does unreduced int32 add/sub (`a[j] ± t`)
+    that overflow for unbounded inputs, so we prove functional equivalence under two's-complement
+    wrapping (what the code computes; matches the mod-2^n model) and do NOT assert NTT overflow-freedom.
+    Proving overflow-freedom needs coefficient-bound composition across the 8 levels (v1.5).
 - Anything not listed as proven is, explicitly, NOT proven.
 
 ## Modeling choices for `montgomery_reduce` (model/cryptol/MLDSA_NTT.cry)
@@ -57,6 +62,13 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   `a <= 2^31-2^22-1` (bounds the `a+(1<<22)` add against int32 overflow); `caddq` unconditional;
   `freeze` proven compositionally using the `reduce32`/`caddq` overrides, inheriting reduce32's
   precondition. These have SAW (C≡model) proofs but NOT yet Isabelle (model≡spec) proofs.
+- **C ≡ Cryptol for the forward NTT `ntt(a[256])`: VERIFIED under two's-complement wrapping**
+  (`make saw`, exit 0). Proven on the `-fwrapv` bitcode (so all inputs, no bound precondition), with
+  `montgomery_reduce` passed as an override and kept uninterpreted (`w4_unint_z3`) so the 1024
+  butterfly calls reduce to a structural array equality. The Cryptol `ntt` model was also concretely
+  cross-checked against the C on two input vectors. **Not claimed:** NTT overflow-freedom (the
+  unreduced int32 add/sub overflow for unbounded inputs; bound composition is v1.5) and any Isabelle
+  model≡spec for the NTT.
 - The earlier 16-vector C-vs-Cryptol concrete cross-check (2026-06-01) remains as a secondary
   sanity check; the SAW proof above supersedes it for all in-range inputs.
 

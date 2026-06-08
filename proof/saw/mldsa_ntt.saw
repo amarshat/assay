@@ -25,6 +25,9 @@ let montgomery_reduce_spec = do {
 
 montgomery_reduce_ov <-
     llvm_verify m "PQCLEAN_MLDSA44_CLEAN_montgomery_reduce" [] true montgomery_reduce_spec z3;
+// NB: a CVC5 two-solver cross-check was attempted but CVC5 does not terminate in reasonable time on
+// this goal (the nonlinear a*QINV / t*Q products; CVC5 spins in --nl-cov). z3 discharges it in
+// seconds. We keep z3 only here; the non-vacuity is covered by the mutation test (make mutation-test).
 
 print "VERIFIED: PQCLEAN_MLDSA44_CLEAN_montgomery_reduce == Cryptol montgomery_reduce (under -2^31*Q <= a <= Q*2^31)";
 

@@ -14,7 +14,9 @@ BIN="$TOOLS_DIR/bin"
 mkdir -p "$DL_DIR"
 export PATH="$BIN:$PATH"
 
-AFP_ASSET="afp-current.tar.gz"
+# PINNED AFP snapshot (everything else in this project is pinned; afp-current drifts and would
+# silently break the Isabelle leg when AFP rolls). This is the snapshot used to build the proofs.
+AFP_ASSET="${AFP_ASSET:-afp-2026-06-05.tar.gz}"
 AFP_URL="https://www.isa-afp.org/release/${AFP_ASSET}"
 SAW_ISA_COMPONENT="$TOOLS_DIR/saw-1.5.1/lib/isabelle"   # ships session Cryptol_Base/Cryptol
 

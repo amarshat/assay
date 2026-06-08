@@ -18,10 +18,14 @@ jobs:
           key: tools-saw1.5.1-${{ runner.os }}-${{ hashFiles('scripts/setup.sh') }}
       - name: Set up toolchain (SAW + clang; Isabelle skipped)
         run: SKIP_ISABELLE=1 ./scripts/setup.sh
-      - name: Reject proof holes (no `sorry`)
+      - name: Reject proof holes (no sorry/oops/admit)
         run: |
-          if grep -rn --include='*.thy' '\bsorry\b' spec/; then
-            echo "::error::Found 'sorry' (proof hole) in spec/."; exit 1
+          if grep -rnE --include='*.thy' '\b(sorry|oops|admit)\b' spec/; then
+            echo "::error::Found a proof hole (sorry/oops/admit) in spec/."; exit 1
           fi
+      - name: Lift-check (committed Isabelle model == cryptol-to-isabelle of the Cryptol model)
+        run: make lift-check
       - name: Prove C == Cryptol model (SAW)
         run: make saw
+      - name: Non-vacuity guard (SAW must reject a deliberately-wrong model)
+        run: make mutation-test

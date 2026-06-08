@@ -17,13 +17,21 @@ BITCODE     := build/mldsa_ntt.bc
 SAW_SCRIPT  := proof/saw/mldsa_ntt.saw
 ISA_SESSION := Assay
 
-.PHONY: all verify bitcode saw isabelle writeup clean
+.PHONY: all verify bitcode saw isabelle lift-check mutation-test writeup clean
 
 all: verify
 
-## Full pipeline: C ≡ Cryptol (SAW) then model ≡ FIPS spec (Isabelle)
-verify: saw isabelle
+## Full pipeline: lift in sync (lift-check) → C ≡ Cryptol (SAW) → model ≡ FIPS spec (Isabelle)
+verify: lift-check saw isabelle
 	@echo "✔ pipeline complete — all checked steps passed"
+
+## Composition gate: committed Isabelle model == cryptol-to-isabelle(Cryptol model). Fast; SAW bundle only.
+lift-check:
+	./scripts/lift_check.sh
+
+## Non-vacuity guard: assert SAW REJECTS a deliberately-wrong model.
+mutation-test:
+	CLANG=$(CLANG) ./scripts/mutation_test.sh
 
 ## Compile the target C subroutine to LLVM bitcode for SAW
 bitcode:

@@ -29,14 +29,20 @@ this is the optimized/assembly code that ships in production (see [Roadmap](docs
 
   A mutation test confirms the reduce proof is non-vacuous, and CI diffs the lifted Isabelle model
   against the Cryptol model SAW checks.
-- **Isabelle (model ≡ spec)** — `montgomery_reduce` only: the lifted model meets
-  `is_montgomery_reduction` (`2³²·r ≡ a (mod Q)` and `−Q < r < Q`) on `−2³¹·Q ≤ a < 2³¹·Q`, no
-  `sorry`/`oops`. The others have SAW proofs but not the Isabelle leg yet.
+- **Isabelle (model ≡ spec)** — the whole `reduce.c` layer, no `sorry`/`oops`:
+  - `montgomery_reduce` meets `is_montgomery_reduction` (`2³²·r ≡ a (mod Q)`, `−Q < r < Q`) on
+    `−2³¹·Q ≤ a < 2³¹·Q`.
+  - `caddq` (residue-preserving, maps `[−Q,Q)` into `[0,Q)`); `reduce32` (residue-preserving, output
+    in the true window `[−6283009, 6283008]`) on `a ≤ 2³¹−2²²−1`; `freeze = caddq∘reduce32` (output
+    in `[0,Q)`), proven compositionally.
 
-Chained, for `montgomery_reduce`: the C computes a correct Montgomery residue mod Q on that range.
+Chained with the SAW leg, this gives C ≡ spec for the full `reduce.c` arithmetic layer: each
+function computes a correct residue mod Q within its proven output window.
 
-While doing this we found an off-by-one in PQClean's `montgomery_reduce` doc comment: it claims a
-strict output bound that fails at one (unreachable) input endpoint. See `docs/ASSUMPTIONS.md`, OF-1.
+While doing this we found two off-by-one errors in PQClean's reduce.c doc comments — `montgomery_reduce`
+(strict bound fails at one unreachable endpoint; OF-1) and `reduce32` (documented `−6283008` low end is
+reachably `−6283009` under its own one-sided precondition; OF-2). Both are doc/contract issues, not
+miscomputations. See `docs/ASSUMPTIONS.md`.
 
 ## Scope and limitations
 
@@ -57,8 +63,8 @@ and honestly scoped, but it targets the easy function.
   `mldsa-native`) is different, and verified with other tools (CBMC, HOL-Light). Pointing this
   pipeline at `mldsa-native` is v2.
 
-So: a working end-to-end pipeline on third-party reference C, plus a minor upstream doc fix. Not an
-ML-DSA assurance result.
+So: a working end-to-end pipeline on third-party reference C, plus two minor upstream doc fixes (OF-1,
+OF-2). Not an ML-DSA assurance result.
 
 ## Background (if formal verification is new to you)
 
@@ -78,7 +84,7 @@ missed. PQC-Assay applies the same public approach to third-party reference C.
    Cryptol model  ──(2) SAW: C ≡ Cryptol──►  ✔
           │  (3) cryptol-to-isabelle
           ▼
-   Isabelle model ──(4) model ≡ FIPS spec──►  ✔ (montgomery_reduce)
+   Isabelle model ──(4) model ≡ FIPS spec──►  ✔ (reduce.c layer)
                                   ▲
                   spec written from FIPS 204; no Apple artifacts
 ```

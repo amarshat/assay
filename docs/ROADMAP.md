@@ -9,8 +9,10 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
   reduction is not itself specified in FIPS 204) — not a "FIPS-numbered sub-algorithm". It is also
   parameter-set-independent (valid for ML-DSA-44/65/87) and the least bug-prone function in the stack.
   **This is a pipeline warm-up on third-party reference C, not an ML-DSA assurance milestone.**
-- Rounding out the layer: SAW proofs for `reduce32`, `caddq`, `freeze` (the same translation unit).
-  `caddq`'s `(a>>31)&Q` is the real branch-free-signedness exercise `montgomery_reduce` isn't.
+- Rounding out the layer (DONE): both legs for `reduce32`, `caddq`, `freeze` (same translation unit) —
+  SAW C ≡ Cryptol AND Isabelle model ≡ spec, no holes. `caddq`'s `(a>>31)&Q` is the branch-free
+  signedness exercise `montgomery_reduce` isn't; `reduce32`'s Barrett output bound is a floor-division
+  interval proof (and surfaced OF-2, a doc-comment off-by-one on its low end). `freeze` is compositional.
 - Hard gate (composition soundness): `make lift-check` mechanizes the `cryptol-to-isabelle` step —
   regenerate the Isabelle model from the `.cry` SAW checks and diff against the committed theory, so
   the end-to-end chain has no eyeball-maintained link.
@@ -50,6 +52,8 @@ to, and closer to deployed code). This is **multi-month**, not "re-point the pro
 - Full end-to-end ML-DSA. Whole-algorithm correctness. Multiple implementations at once.
 
 ## Disclosure
-- OF-1 (the upstream `montgomery_reduce` doc-comment off-by-one) routes to **pq-crystals/dilithium**
-  (origin; PQClean is archiving), and should also check the optimized AVX2/aarch64 variants' comment.
-  Handle per CLAUDE.md (deliberate, human-routed; not auto-filed).
+- OF-1 (`montgomery_reduce` doc-comment strict-bound off-by-one at an endpoint) and OF-2 (`reduce32`
+  doc-comment low-end bound `-6283008` reachably `-6283009` under its one-sided precondition) both
+  route to **pq-crystals/dilithium** (origin; PQClean is archiving), and should also check the
+  optimized AVX2/aarch64 variants' comments. Handle per CLAUDE.md (deliberate, human-routed; not
+  auto-filed). Both are doc/contract issues — neither is a miscomputation.

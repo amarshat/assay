@@ -16,9 +16,10 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   reduce.c primitives ≡ Cryptol model (`montgomery_reduce` under its precondition; `reduce32` under
   `a <= 2^31-2^22-1`; `caddq` unconditional; `freeze` compositional), AND the forward NTT
   `ntt(a[256])` ≡ Cryptol `ntt` under two's-complement wrapping (see overflow note below). The
-  Isabelle model≡spec leg covers `montgomery_reduce` only. The forward NTT is proven equal to the
-  model but its **overflow-freedom / coefficient-bound composition is NOT proven** (the v1.5 task),
-  and there is no Isabelle spec for the NTT yet.
+  Isabelle model≡spec leg covers the **whole `reduce.c` layer** (`montgomery_reduce`, `caddq`,
+  `reduce32`, `freeze`). The forward NTT is proven equal to the model but its **overflow-freedom /
+  coefficient-bound composition is NOT proven** (the v1.5 task), and there is no Isabelle spec for
+  the NTT yet.
 - Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof IS
   discharged under exactly this precondition (`mont_in_range` in the model); equivalence outside it
   is NOT claimed by the proof. (Empirically the Cryptol model is a bit-exact transcription that also
@@ -61,7 +62,7 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
 - **C ≡ Cryptol for reduce32 / caddq / freeze: VERIFIED** (`make saw`, exit 0). `reduce32` under
   `a <= 2^31-2^22-1` (bounds the `a+(1<<22)` add against int32 overflow); `caddq` unconditional;
   `freeze` proven compositionally using the `reduce32`/`caddq` overrides, inheriting reduce32's
-  precondition. These have SAW (C≡model) proofs but NOT yet Isabelle (model≡spec) proofs.
+  precondition.
 - **C ≡ Cryptol for the forward NTT `ntt(a[256])`: VERIFIED under two's-complement wrapping**
   (`make saw`, exit 0). Proven on the `-fwrapv` bitcode (so all inputs, no bound precondition), with
   `montgomery_reduce` passed as an override and kept uninterpreted (`w4_unint_z3`) so the 1024
@@ -90,7 +91,16 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     (`mont_input_ok`, where the strict `-Q<r<Q` actually holds; OF-1). The composed end-to-end
     correctness claim therefore holds on the half-open intersection (which is the honest, maximal
     domain for the strict-bound spec).
-- **NOT proven:** reduce32/caddq/freeze, the forward NTT, optimized/native code, constant-time.
+- **model ≡ spec for reduce32 / caddq / freeze (Isabelle leg): VERIFIED (2026-06-08).**
+  `isabelle build -D spec/isabelle Assay` exits 0, no `sorry`/`oops`. The lifted Cryptol models satisfy:
+  - `caddq_correct`: `is_caddq` (residue-preserving; maps `[-Q,Q)` into `[0,Q)`) — unconditional.
+  - `reduce32_correct`: `is_reduce32` (residue-preserving; output in the TRUE window
+    `[-6283009, 6283008]`, see OF-2) over the SAW domain `a <= 2^31-2^22-1`. The output-bound proof
+    is a floor-division interval argument with a case split at the extreme quotient `t = -256`.
+  - `freeze_correct`: `is_freeze` (residue-preserving; output in `[0,Q)`) over the same domain,
+    proven compositionally — reduce32's window `[-6283009, 6283008]` lies in `[-Q, Q)`, satisfying
+    caddq's precondition. Chained with the SAW leg this gives C ≡ spec for the full `reduce.c` layer.
+- **NOT proven:** the forward NTT (model≡spec / overflow-freedom), optimized/native code, constant-time.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

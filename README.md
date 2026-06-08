@@ -1,8 +1,9 @@
 <p align="center">
-  <img src="assay-logo.png" alt="Assay — C = spec" width="260">
+  <img src="assay-logo.png" alt="PQC-Assay — C = spec" width="260">
 </p>
 
-<h1 align="center">Assay</h1>
+<h1 align="center">PQC-Assay</h1>
+<p align="center"><em>(formerly "Assay")</em></p>
 
 **Machine-checking a post-quantum reference-C arithmetic primitive against its specification, with an Apple-style SAW → Cryptol → Isabelle pipeline.**
 

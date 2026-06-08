@@ -1,8 +1,7 @@
-// SAW proof: the vendored PQClean C `montgomery_reduce` implements the Cryptol model,
-// bit-for-bit, for all inputs in the documented precondition.
+// SAW proof: the vendored PQClean C reduction primitives implement the Cryptol model bit-for-bit.
 //
-// SCOPE (v1, this session): montgomery_reduce ONLY. The other reduce.c functions and the
-// forward NTT are out of scope and intentionally not proven here.
+// SCOPE (v1): the reduce.c layer — montgomery_reduce (under its documented precondition) plus
+// reduce32, caddq, freeze (unconditionally). The forward NTT is out of scope.
 //
 // Paths are relative to THIS script's directory (SAW resolves load/import that way):
 //   ../../build/mldsa_ntt.bc            <- built by scripts/build_bitcode.sh from target/pqclean
@@ -28,3 +27,33 @@ montgomery_reduce_ov <-
     llvm_verify m "PQCLEAN_MLDSA44_CLEAN_montgomery_reduce" [] true montgomery_reduce_spec z3;
 
 print "VERIFIED: PQCLEAN_MLDSA44_CLEAN_montgomery_reduce == Cryptol montgomery_reduce (under -2^31*Q <= a <= Q*2^31)";
+
+// --- the rest of the reduce.c layer: reduce32, caddq, freeze (unconditional [32] -> [32]) ---
+
+// reduce32 carries the documented precondition a <= 2^31-2^22-1 (so the a+(1<<22) add can't overflow).
+let reduce32_spec = do {
+    a <- llvm_fresh_var "a" (llvm_int 32);
+    llvm_precond {{ reduce32_in_range a }};
+    llvm_execute_func [llvm_term a];
+    llvm_return (llvm_term {{ reduce32 a }});
+};
+reduce32_ov <- llvm_verify m "PQCLEAN_MLDSA44_CLEAN_reduce32" [] true reduce32_spec z3;
+
+let caddq_spec = do {
+    a <- llvm_fresh_var "a" (llvm_int 32);
+    llvm_execute_func [llvm_term a];
+    llvm_return (llvm_term {{ caddq a }});
+};
+caddq_ov <- llvm_verify m "PQCLEAN_MLDSA44_CLEAN_caddq" [] true caddq_spec z3;
+
+// freeze calls reduce32 then caddq; use the proven specs as overrides (compositional verification).
+// It inherits reduce32's precondition on the input.
+let freeze_spec = do {
+    a <- llvm_fresh_var "a" (llvm_int 32);
+    llvm_precond {{ reduce32_in_range a }};
+    llvm_execute_func [llvm_term a];
+    llvm_return (llvm_term {{ freeze a }});
+};
+freeze_ov <- llvm_verify m "PQCLEAN_MLDSA44_CLEAN_freeze" [reduce32_ov, caddq_ov] true freeze_spec z3;
+
+print "VERIFIED: reduce32, caddq, freeze == Cryptol models (the reduce.c layer)";

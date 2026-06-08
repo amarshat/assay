@@ -31,6 +31,9 @@ q = 8380417
 Q64 : [64]
 Q64 = 8380417
 
+Q32 : [32]
+Q32 = 8380417
+
 QINV : [64]
 QINV = 58728449
 
@@ -61,6 +64,29 @@ mont_in_range a = (a >=$ lo) && (a <=$ hi)
   where
     hi = (2 : [64]) ^^ 31 * Q64
     lo = - hi
+
+// --- the rest of the reduce.c layer ----------------------------------------------------
+// Bit-exact transcriptions of the other reduce.c primitives, each [32] -> [32]. `>>$` is the
+// ARITHMETIC right shift matching signed C `>>` on int32_t; `&&` is bitwise-and; `*`/`+`/`-` are
+// mod-2^32 (= C int32 two's-complement). Verified against the C by SAW (unconditionally).
+
+// reduce32: t = (a + (1<<22)) >> 23; return a - t*Q.   (Barrett-style.)
+reduce32 : [32] -> [32]
+reduce32 a = a - t * Q32
+  where t = (a + (1 << 22)) >>$ 23
+
+// Documented precondition for reduce32 (reduce.c): a <= 2^31 - 2^22 - 1 = 2143289343. This bounds
+// the `a + (1<<22)` add so it does not overflow int32 (which the C `-O0` `nsw` add forbids).
+reduce32_in_range : [32] -> Bit
+reduce32_in_range a = a <=$ 2143289343
+
+// caddq: a += (a >> 31) & Q.  The arithmetic `>> 31` smears the sign bit, so this adds Q iff a<0.
+caddq : [32] -> [32]
+caddq a = a + ((a >>$ 31) && Q32)
+
+// freeze: a = caddq(reduce32(a)) -> canonical representative in [0, Q).
+freeze : [32] -> [32]
+freeze a = caddq (reduce32 a)
 
 // --- out of scope (v1): forward NTT ----------------------------------------------------
 // The forward NTT (params N = 256, etc.) is deliberately NOT modeled this session. It is

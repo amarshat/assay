@@ -19,16 +19,17 @@ assembly code shipped in most products** (AVX2, aarch64-asm, mldsa-native); that
 > (NOT the NTT, NOT the other reduction primitives, NOT a full algorithm).
 >
 > **What is proven today (tool-checked, `make verify` exits 0):**
-> - **SAW (C ≡ Cryptol): DONE.** The C function `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce`
->   (PQClean ML-DSA-44, pinned in `target/`) is bit-for-bit equal to the Cryptol model in `model/`,
->   for all inputs in `−2³¹·Q ≤ a ≤ Q·2³¹` (verified non-vacuous).
-> - **Isabelle (model ≡ spec): DONE.** The cryptol-to-isabelle-lifted model satisfies the
->   independently-written spec `is_montgomery_reduction` — `2³²·r ≡ a (mod Q)` and strict `−Q < r < Q`
->   — for every input in the half-open domain `−2³¹·Q ≤ a < 2³¹·Q`. No `sorry`, no `oops`.
+> - **SAW (C ≡ Cryptol): the whole `reduce.c` layer.** All four primitives are proven bit-for-bit
+>   equal to the Cryptol model: `montgomery_reduce` (inputs `−2³¹·Q ≤ a ≤ Q·2³¹`), `reduce32`
+>   (`a ≤ 2³¹−2²²−1`), `caddq` (unconditional), `freeze` (compositional). Verified non-vacuous.
+> - **Isabelle (model ≡ spec): `montgomery_reduce`.** The cryptol-to-isabelle-lifted model satisfies
+>   the independently-written spec `is_montgomery_reduction` — `2³²·r ≡ a (mod Q)` and strict
+>   `−Q < r < Q` — for the half-open domain `−2³¹·Q ≤ a < 2³¹·Q`. No `sorry`, no `oops`.
+>   (The other three have SAW proofs but not yet the Isabelle spec leg.)
 >
-> Chaining the two: **the deployed C `montgomery_reduce` computes a correct Montgomery residue mod Q**
-> (for that input range). **Not in scope:** the other reduction primitives, the forward NTT, optimized
-> code, any constant-time / side-channel property. We also found a minor off-by-one in PQClean's
+> Chaining the two for `montgomery_reduce`: **the C computes a correct Montgomery residue mod Q** on
+> that half-open domain. **Not in scope:** the forward NTT, optimized/native code, any constant-time /
+> side-channel property. We also found a minor off-by-one in PQClean's
 > `montgomery_reduce` doc-comment bound at the inclusive endpoint (see `docs/ASSUMPTIONS.md`, OF-1).
 > Every claim is only as strong as the assumptions in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
 

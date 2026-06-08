@@ -12,10 +12,11 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   Provenance noted in spec/README.md.
 
 ## Scope limits (v1)
-- **This session proves nothing about the forward NTT.** Scope is the single primitive
-  `PQCLEAN_MLDSA44_CLEAN_montgomery_reduce` (`int32_t(int64_t)`) from target/pqclean/reduce.c —
-  the reduction the NTT relies on. The other reduce.c functions (reduce32, caddq, freeze) and the
-  NTT itself are NOT modeled or proven yet.
+- **Scope is the reduce.c layer; nothing about the forward NTT is proven.** SAW proves all four
+  reduce.c primitives ≡ Cryptol model: `montgomery_reduce` (under its precondition), and `reduce32`
+  (under `a <= 2^31-2^22-1`), `caddq`, `freeze` (`caddq` unconditional; `freeze` inherits reduce32's
+  precondition). The Isabelle model≡spec leg currently covers `montgomery_reduce` only. The forward
+  NTT is NOT modeled or proven.
 - Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof IS
   discharged under exactly this precondition (`mont_in_range` in the model); equivalence outside it
   is NOT claimed by the proof. (Empirically the Cryptol model is a bit-exact transcription that also
@@ -52,6 +53,10 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     postcondition is really being asserted. (An earlier control swapping `>>$`→`>>` correctly still
     passed — for this function the shift-by-32-then-truncate makes arithmetic/logical shift
     equivalent, so it is not a behavioral change.)
+- **C ≡ Cryptol for reduce32 / caddq / freeze: VERIFIED** (`make saw`, exit 0). `reduce32` under
+  `a <= 2^31-2^22-1` (bounds the `a+(1<<22)` add against int32 overflow); `caddq` unconditional;
+  `freeze` proven compositionally using the `reduce32`/`caddq` overrides, inheriting reduce32's
+  precondition. These have SAW (C≡model) proofs but NOT yet Isabelle (model≡spec) proofs.
 - The earlier 16-vector C-vs-Cryptol concrete cross-check (2026-06-01) remains as a secondary
   sanity check; the SAW proof above supersedes it for all in-range inputs.
 

@@ -29,4 +29,18 @@ definition mont_input_ok :: "int \<Rightarrow> bool" where
 definition is_montgomery_reduction :: "int \<Rightarrow> int \<Rightarrow> bool" where
   "is_montgomery_reduction a r \<longleftrightarrow> (2^32 * r) mod q = a mod q \<and> -q < r \<and> r < q"
 
+(* --- the rest of the reduce.c layer -------------------------------------------------------- *)
+
+(* caddq: add q iff a is negative. Preserves the residue, and maps (-q, q) into [0, q). *)
+definition is_caddq :: "int \<Rightarrow> int \<Rightarrow> bool" where
+  "is_caddq a r \<longleftrightarrow> r mod q = a mod q \<and> (-q \<le> a \<and> a < q \<longrightarrow> 0 \<le> r \<and> r < q)"
+
+(* reduce32 (Barrett-style): r \<equiv> a (mod q) with the documented centered output window. *)
+definition is_reduce32 :: "int \<Rightarrow> int \<Rightarrow> bool" where
+  "is_reduce32 a r \<longleftrightarrow> r mod q = a mod q \<and> -6283008 \<le> r \<and> r \<le> 6283008"
+
+(* freeze = caddq \<circ> reduce32: the canonical representative in [0, q). *)
+definition is_freeze :: "int \<Rightarrow> int \<Rightarrow> bool" where
+  "is_freeze a r \<longleftrightarrow> r mod q = a mod q \<and> 0 \<le> r \<and> r < q"
+
 end

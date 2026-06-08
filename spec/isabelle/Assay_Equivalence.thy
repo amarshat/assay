@@ -228,6 +228,41 @@ proof -
     by simp
 qed
 
+\<comment> \<open>--- the rest of the reduce.c layer: caddq / reduce32 / freeze vs spec ---\<close>
+
+lemma caddq_correct:
+  fixes a :: "(32, bool) seq"
+  shows "is_caddq (sint_seq a) (sint_seq (caddq a))"
+proof -
+  define aw :: "32 word" where "aw = seq_to_word a"
+  have A: "sint_seq a = sint aw" unfolding aw_def by (rule probe_sint_seq)
+  have br: "sint_seq (caddq a) = sint (aw + (sshiftr aw 31 AND 0x7FE001))"
+    unfolding caddq_def Q32_def aw_def by (simp add: probe_sint_seq word_seq_convs seq_to_word)
+  have lo: "- 2147483648 \<le> sint aw" and hi: "sint aw < 2147483648"
+    using sint_greater_eq[of aw] sint_lt[of aw] by simp_all
+  \<comment> \<open>the shift-AND selects q iff aw is negative\<close>
+  have sel: "(sshiftr aw 31 AND (0x7FE001 :: 32 word)) = (if sint aw < 0 then 0x7FE001 else 0)"
+    by (intro bit_word_eqI)
+       (auto simp: bit_simps word_msb_sint[symmetric] msb_word_iff_bit not_le less_Suc0)
+  \<comment> \<open>sint of the sum: no int32 overflow either way\<close>
+  have val: "sint (aw + (sshiftr aw 31 AND 0x7FE001)) = sint aw + (if sint aw < 0 then 8380417 else 0)"
+  proof (cases "sint aw < 0")
+    case True
+    have b1: "- 2147483648 \<le> sint aw + 8380417" using lo by simp
+    have b2: "sint aw + 8380417 < 2147483648" using True by simp
+    have "sint (aw + 0x7FE001) = sint (word_of_int (sint aw + 8380417) :: 32 word)"
+      by (metis of_int_add of_int_numeral of_int_sint)
+    also have "\<dots> = sint aw + 8380417"
+      by (rule sint_of_int_eq) (use b1 b2 in simp)+
+    finally show ?thesis using sel True by simp
+  next
+    case False thus ?thesis using sel by simp
+  qed
+  show ?thesis
+    unfolding is_caddq_def MLDSA_NTT_Spec.q_def A br val
+    using lo hi by (auto simp: mod_add_self2)
+qed
+
 end
 
 end

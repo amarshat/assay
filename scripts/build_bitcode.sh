@@ -18,8 +18,16 @@ CLANG="${CLANG:-clang}"
 COMBINED="$OUT_DIR/_combined.c"
 printf '#include "reduce.c"\n#include "ntt.c"\n' > "$COMBINED"
 
+WRAPV="${OUT%.bc}_wrapv.bc"
+
 set -x
+# Default (nsw): used for the reduce.c proofs, which assert no signed-overflow UB in range.
 "$CLANG" -c -emit-llvm -O0 -g -I "$TARGET_DIR" "$COMBINED" -o "$OUT"
+# -fwrapv (two's-complement wrapping, no nsw): used for the forward-NTT functional-equivalence
+# proof. The NTT does unreduced int32 add/sub that overflow for unbounded inputs; proving
+# overflow-freedom needs coefficient-bound composition (future work). Under wrapping the C computes
+# exactly the mod-2^n Cryptol model, so functional equivalence holds for all inputs.
+"$CLANG" -c -emit-llvm -O0 -g -fwrapv -I "$TARGET_DIR" "$COMBINED" -o "$WRAPV"
 set +x
 
-echo ">> built bitcode: $OUT"
+echo ">> built bitcode: $OUT and $WRAPV"

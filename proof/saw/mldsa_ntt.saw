@@ -60,3 +60,39 @@ let freeze_spec = do {
 freeze_ov <- llvm_verify m "PQCLEAN_MLDSA44_CLEAN_freeze" [reduce32_ov, caddq_ov] true freeze_spec z3;
 
 print "VERIFIED: reduce32, caddq, freeze == Cryptol models (the reduce.c layer)";
+
+// --- forward NTT: C ntt(a[256]) ≡ Cryptol ntt, under two's-complement wrapping -------------
+// The forward NTT does UNREDUCED int32 add/sub (a[j] ± t) that overflow int32 for unbounded inputs.
+// Proving overflow-freedom needs coefficient-bound composition across the 8 levels (the hard v1.5
+// task); here we prove FUNCTIONAL EQUIVALENCE under two's-complement wrapping, which is what the
+// code computes and exactly matches the mod-2^n Cryptol model. We therefore load the `-fwrapv`
+// bitcode (no nsw poison), so the equivalence holds for ALL inputs without a bound precondition.
+// montgomery_reduce is passed as an override and kept UNINTERPRETED (w4_unint_z3) so the 1024
+// butterfly calls collapse to a structural array equality instead of re-expanding the reduction.
+mw <- llvm_load_module "../../build/mldsa_ntt_wrapv.bc";
+
+// On the -fwrapv module, montgomery_reduce == model unconditionally (a - t*Q wraps, no UB).
+let mont_reduce_uncond_spec = do {
+    a <- llvm_fresh_var "a" (llvm_int 64);
+    llvm_execute_func [llvm_term a];
+    llvm_return (llvm_term {{ montgomery_reduce a }});
+};
+mr_ov_w <- llvm_verify mw "PQCLEAN_MLDSA44_CLEAN_montgomery_reduce" [] true mont_reduce_uncond_spec z3;
+
+let ptr_to_fresh nm ty = do {
+    x <- llvm_fresh_var nm ty;
+    p <- llvm_alloc ty;
+    llvm_points_to p (llvm_term x);
+    return (x, p);
+};
+
+let ntt_spec = do {
+    (a, pa) <- ptr_to_fresh "a" (llvm_array 256 (llvm_int 32));
+    llvm_execute_func [pa];
+    llvm_points_to pa (llvm_term {{ ntt a }});
+};
+
+ntt_ov <- llvm_verify mw "PQCLEAN_MLDSA44_CLEAN_ntt" [mr_ov_w] true ntt_spec
+                      (w4_unint_z3 ["montgomery_reduce"]);
+
+print "VERIFIED: PQCLEAN_MLDSA44_CLEAN_ntt == Cryptol ntt (two's-complement wrapping; montgomery_reduce override)";

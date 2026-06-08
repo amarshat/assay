@@ -43,6 +43,11 @@ The natural v2 target (optimized ≡ reference) is **PQ Code Package `mldsa-nati
   - `reduce.h`  (prototypes + `MONT = -4186625`, `QINV = 58728449`) — `c56a083ce9ea4da55a17e9c2f2da74e7277cdede5b2f8e758e441ff9e0813863`
   - `params.h`  (defines `Q = 8380417`, `N = 256`; self-contained, no further includes) — `0210251cea61d26e49b2dad16c4ed86d65474fbffa54c61af7a22c677ddd3cd2`
   - `LICENSE`   (CC0 dedication, kept alongside) — `5d7798eec4d8c8ef0a72dfe805ec54dfd7b212d3928bf9695fda4095d22829ab`
+  - `ntt.c`     (forward NTT + invntt + 256-entry `zetas` table) — `c9fd2b30ef1175f2c66b14c4385a68b22bf500e8349c16d0b5fe1fecf31e5470`
+  - `ntt.h`     (prototypes for `ntt` / `invntt_tomont`) — `72e60747ac88f6e3dc9ea7b7b67aed3fa120633bb1e2acfc9a9db948069cecf1`
+- Build note: `ntt()` calls `montgomery_reduce`, so `scripts/build_bitcode.sh` compiles a single
+  translation unit that `#include`s both `reduce.c` and `ntt.c` (wrapper in `build/`, vendored files
+  unedited) — there is no `llvm-link` in the toolchain.
 - License of vendored code: **Public Domain (CC0)** — per the per-directory `LICENSE`:
   > Public Domain (https://creativecommons.org/share-your-work/public-domain/cc0/)
   `reduce.c`/`reduce.h`/`params.h` carry no per-file copyright header. The LICENSE's Keccak/AES

@@ -29,6 +29,15 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
 - This is the actual historical ML-DSA bug class (cf. ePrint 2026/1032's optimized-path overflow that
   survived KATs; Apple's missing-reduction InvNTT bug). It also needs an Isabelle FIPS-204 NTT spec
   (negacyclic, 8-level) validated against FIPS 204 Algorithms 41–42 — itself a substantial formalization.
+- **Status (2026-06-09): attempted in SAW, deferred to Isabelle.** The overflow-freedom proof was
+  prototyped on the **nsw** bitcode (bounded `montgomery_reduce` override proving output in `(-Q, Q)`,
+  plus an `ntt_in_range` input bound with headroom `2^27 > 8Q`); see branch `v1.5-saw-overflow-wip`.
+  The bounded override **proves** (and re-surfaced OF-1: the strict output bound needs the half-open
+  domain). The math is sound (max coefficient after 8 levels `= B + 8(Q-1) < 2^31-1`). But the full
+  `ntt` proof is **computationally impractical**: fully unrolling the 1024 butterflies yields ~3000 SMT
+  obligations and does not complete in practical wall-clock. The tractable route is **induction over
+  the 8 levels in Isabelle** — a single lemma "`nttLevel` grows max-|coeff| by `<= Q`", iterated 8x —
+  composed with the existing `-fwrapv` C≡model equivalence to conclude no-UB-under-bound on the C. Open.
 
 ## v2 — optimized ≡ reference (the credibility + bug-hunt step)
 Re-point the pipeline at **PQ Code Package's `mldsa-native`** (the maintained successor PQClean points

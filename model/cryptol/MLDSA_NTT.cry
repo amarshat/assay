@@ -54,6 +54,25 @@ mont_in_range a = (a >=$ lo) && (a <=$ hi)
     hi = (2 : [64]) ^^ 31 * Q64
     lo = - hi
 
+// Half-open variant (strict upper bound). This is the domain on which montgomery_reduce's STRICT
+// output bound -Q < r < Q actually holds: at the inclusive upper endpoint a = 2^31*Q the function
+// returns exactly Q (finding OF-1), so the strict bound needs a < 2^31*Q. Used as the precondition
+// of the bounded override in the NTT overflow proof (the NTT never feeds inputs this large anyway).
+mont_in_range_ho : [64] -> Bit
+mont_in_range_ho a = (a >=$ lo) && (a <$ hi)
+  where
+    hi = (2 : [64]) ^^ 31 * Q64
+    lo = - hi
+
+// v1.5 (overflow-freedom): input-coefficient bound under which the forward NTT does not overflow
+// int32. Each of the 8 levels grows |coeff| by < Q (the montgomery_reduce output bound carried
+// through the a[j] +/- t butterflies), so over the whole transform |coeff| grows by < 8*Q. Requiring
+// every input coefficient within +/- (2^31 - 2^27) leaves headroom 2^27 = 134217728 > 8*Q = 67043336
+// below the int32 range, so no add/sub overflows AND every montgomery_reduce input |zeta*a| stays
+// within its precondition |.| <= 2^31*Q. (2^31 - 2^27 = 2013265920.)
+ntt_in_range : [256][32] -> Bit
+ntt_in_range a = all (\x -> (x >=$ (-2013265920 : [32])) && (x <=$ (2013265920 : [32]))) a
+
 // --- the rest of the reduce.c layer ----------------------------------------------------
 // Bit-exact transcriptions of the other reduce.c primitives, each [32] -> [32]. `>>$` is the
 // ARITHMETIC right shift matching signed C `>>` on int32_t; `&&` is bitwise-and; `*`/`+`/`-` are

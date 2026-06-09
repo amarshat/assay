@@ -53,7 +53,8 @@ to, and closer to deployed code). This is **multi-month**, not "re-point the pro
 
 ## Disclosure
 - OF-1 (`montgomery_reduce` doc-comment strict-bound off-by-one at an endpoint) and OF-2 (`reduce32`
-  doc-comment low-end bound `-6283008` reachably `-6283009` under its one-sided precondition) both
-  route to **pq-crystals/dilithium** (origin; PQClean is archiving), and should also check the
-  optimized AVX2/aarch64 variants' comments. Handle per CLAUDE.md (deliberate, human-routed; not
-  auto-filed). Both are doc/contract issues — neither is a miscomputation.
+  doc-comment low-end bound `-6283008` reachably `-6283009` under its one-sided precondition) were
+  **disclosed 2026-06-09 as pq-crystals/dilithium#114** (origin; PQClean is archiving; mldsa-native /
+  liboqs are downstream). The AVX2 path has no `reduce.c`, so the comments don't repeat there. Both are
+  doc/contract issues, not miscomputations. Next: await maintainer response, then offer a PR for their
+  preferred phrasing.

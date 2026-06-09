@@ -130,6 +130,11 @@ Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform
   (see "Compiler correctness").
 
 ## Open findings (handle per CONTRIBUTING.md → Responsible disclosure)
+- **DISCLOSED 2026-06-09:** OF-1 and OF-2 were filed together (deliberate, human-routed) as a single
+  upstream issue: **pq-crystals/dilithium#114** ("ref/reduce.c: doc-comment output bounds for
+  montgomery_reduce and reduce32 are off by one at endpoints"). Both are documentation/contract fixes,
+  not security or functional bugs; PQClean (re-namespaced copy, archiving) and mldsa-native/liboqs are
+  downstream of this origin. Awaiting maintainer response on preferred phrasing before any PR.
 - **OF-1 (2026-06-07): PQClean `montgomery_reduce` doc-comment postcondition is off by one at the
   upper input endpoint.** The comment in `target/pqclean/reduce.c` states, for input domain
   `-2^31*Q <= a <= Q*2^31` (inclusive), that it returns `r` with **`-Q < r < Q`** (strict). But at

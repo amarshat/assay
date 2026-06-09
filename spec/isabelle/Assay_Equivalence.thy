@@ -63,6 +63,11 @@ proof -
   from cong rub rlb r_is show ?thesis by simp
 qed
 
+\<comment> \<open>generic: take_bit at the full word length is the identity (per Galois #3298;
+    the library's take_bit_length_eq is over-specialized)\<close>
+lemma take_bit_length_eq'[simp]: "LENGTH('n) = n \<Longrightarrow> take_bit n (w :: 'n :: len word) = w"
+  by fastforce
+
 \<comment> \<open>sint of a down-cast (64->32) when the signed value fits in 32 bits\<close>
 lemma sint_ucast_fit:
   fixes V :: "64 word"
@@ -157,7 +162,9 @@ proof -
   thus ?thesis by (simp add: mod_eq_dvd_iff)
 qed
 
-context includes cryptol_translation_syntax begin
+\<comment> \<open>per Galois (saw-script #3298): use the cryptol_syntax bundle for hand-written proofs;
+    cryptol_translation_syntax is meant only for translator output and removes notations like \<open>^\<close>.\<close>
+context includes cryptol_syntax begin
 
 text \<open>
   Goal: for a 64-bit input \<open>a\<close> within the documented range, the lifted \<open>montgomery_reduce\<close>
@@ -187,19 +194,6 @@ lemma probe_sext64: "seq_to_word (sext64 x) = (scast (seq_to_word x) :: 64 word)
   apply (intro conjI impI; word_bitwise; simp)
   done
 
-\<comment> \<open>collapse the seq-library's 32+32 length-type cast bookkeeping back to a plain low-32 ucast\<close>
-lemma ucast_collapse:
-  "LENGTH('m::len) = 64 \<Longrightarrow>
-   (ucast (take_bit 32 (ucast (y::64 word) :: 'm word)) :: 32 word) = ucast y"
-  by (rule bit_word_eqI) (auto simp: bit_simps)
-
-lemma probe_bridge:
-  "seq_to_word (montgomery_reduce a) =
-   (ucast (sshiftr (seq_to_word a - scast (ucast (seq_to_word a * 58728449) :: 32 word) * 8380417) 32)
-    :: 32 word)"
-  unfolding montgomery_reduce_def Q64_def QINV_def
-  by (simp add: word_seq_convs seq_to_word probe_sext64 ucast_collapse)
-
 theorem montgomery_reduce_correct:
   fixes a :: "(64, bool) seq"
   assumes "mont_input_ok (sint_seq a)"
@@ -210,10 +204,13 @@ proof -
   have A_eq: "sint_seq a = sint aw" unfolding aw_def by (rule probe_sint_seq)
   have Arng: "- (2147483648 * 8380417) \<le> sint aw \<and> sint aw < 2147483648 * 8380417"
     using assms unfolding mont_input_ok_def MLDSA_NTT_Spec.q_def A_eq by simp
-  \<comment> \<open>bridge to the clean word value, then to its integer meaning\<close>
+  \<comment> \<open>bridge to the clean word value (Galois #3298: the no-op 64->32+32 ucasts discharge via
+      is_up / ucast_up_ucast / take_bit_length_eq'), then to its integer meaning\<close>
   have bval: "sint_seq (montgomery_reduce a)
             = sint (ucast (sshiftr (aw - scast t32 * 8380417) 32) :: 32 word)"
-    unfolding aw_def t32_def by (simp add: probe_sint_seq probe_bridge)
+    unfolding aw_def t32_def montgomery_reduce_def
+    by (simp add: unsigned_take_bit_eq is_up QINV_def Q64_def
+                  probe_sext64 seq_to_word ucast_up_ucast take_bit_length_eq')
   have rval: "sint_seq (montgomery_reduce a) = (sint aw - sint t32 * 8380417) div 4294967296"
     unfolding bval using red_value[OF conjunct1[OF Arng] conjunct2[OF Arng]] .
   \<comment> \<open>premises for mont_core\<close>

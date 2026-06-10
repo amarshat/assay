@@ -12,7 +12,8 @@ PQC-Assay runs the same SAW → Cryptol → Isabelle pipeline Apple used for its
 against the PQClean reference C for ML-DSA (FIPS 204). It uses none of Apple's code or theories; the
 Isabelle spec is written from FIPS 204.
 
-Current scope is the `reduce.c` arithmetic layer and the forward NTT's functional equivalence.
+Current scope is the `reduce.c` arithmetic layer (both legs) and the forward NTT (functional
+equivalence + a machine-checked overflow-freedom / coefficient-bound result).
 Montgomery reduction is an implementation device the NTT uses; it is not defined in FIPS 204. None of
 this is the optimized/assembly code that ships in production (see [Roadmap](docs/ROADMAP.md)).
 
@@ -23,9 +24,8 @@ this is the optimized/assembly code that ships in production (see [Roadmap](docs
 - **SAW (C ≡ Cryptol)** — bit-for-bit:
   - The `reduce.c` layer: `montgomery_reduce` (`−2³¹·Q ≤ a ≤ Q·2³¹`), `reduce32` (`a ≤ 2³¹−2²²−1`),
     `caddq`, `freeze` — these also assert no signed-overflow UB in range.
-  - The forward NTT `ntt(a[256])`, under two's-complement wrapping (`-fwrapv`). The NTT does
-    unreduced int32 add/sub that overflow for unbounded inputs, so this is functional equivalence,
-    not overflow-freedom (which needs coefficient-bound composition — see Roadmap v1.5).
+  - The forward NTT `ntt(a[256])`, under two's-complement wrapping (`-fwrapv`). This is functional
+    equivalence for all inputs; overflow-freedom is proven separately in Isabelle (below).
 
   A mutation test confirms the reduce proof is non-vacuous, and CI diffs the lifted Isabelle model
   against the Cryptol model SAW checks.
@@ -35,9 +35,18 @@ this is the optimized/assembly code that ships in production (see [Roadmap](docs
   - `caddq` (residue-preserving, maps `[−Q,Q)` into `[0,Q)`); `reduce32` (residue-preserving, output
     in the true window `[−6283009, 6283008]`) on `a ≤ 2³¹−2²²−1`; `freeze = caddq∘reduce32` (output
     in `[0,Q)`), proven compositionally.
+- **Isabelle (forward-NTT overflow-freedom)** — `ntt_overflow_free`, no `sorry`/`oops`: for inputs
+  with every coefficient in `±(2³¹−2²⁷)`, the model NTT keeps every coefficient `< 2³¹` through all
+  8 levels, so **no `int32` add/sub overflows** and every `montgomery_reduce` input stays in range.
+  This is the coefficient-bound composition the `-fwrapv` proof sidesteps — proven by induction over
+  the 8 levels (one per-level lemma iterated, montgomery output bound `|t| < Q`), not by SAW
+  unrolling. The C-side claim (the reference NTT has no signed-overflow UB) follows by composing this
+  with the `-fwrapv` C≡model equivalence; that last bridge is an argued meta-step, not separately
+  mechanized (see [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md), Roadmap v1.5).
 
-Chained with the SAW leg, this gives C ≡ spec for the full `reduce.c` arithmetic layer: each
-function computes a correct residue mod Q within its proven output window.
+Chained with the SAW leg, this gives C ≡ spec for the full `reduce.c` arithmetic layer (each function
+computes a correct residue mod Q within its proven output window), plus a machine-checked
+coefficient-bound / overflow-freedom result for the forward NTT.
 
 While doing this we found two off-by-one errors in PQClean's reduce.c doc comments — `montgomery_reduce`
 (strict bound fails at one unreachable endpoint; OF-1) and `reduce32` (documented `−6283008` low end is

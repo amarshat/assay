@@ -17,9 +17,9 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   `a <= 2^31-2^22-1`; `caddq` unconditional; `freeze` compositional), AND the forward NTT
   `ntt(a[256])` ≡ Cryptol `ntt` under two's-complement wrapping (see overflow note below). The
   Isabelle model≡spec leg covers the **whole `reduce.c` layer** (`montgomery_reduce`, `caddq`,
-  `reduce32`, `freeze`). The forward NTT is proven equal to the model but its **overflow-freedom /
-  coefficient-bound composition is NOT proven** (the v1.5 task), and there is no Isabelle spec for
-  the NTT yet.
+  `reduce32`, `freeze`). The forward NTT is proven equal to the model under wrapping AND its
+  **overflow-freedom / coefficient-bound composition is now proven in Isabelle** (`ntt_overflow_free`,
+  v1.5; see proof results below). There is still no Isabelle model≡FIPS-spec for the NTT transform.
 - Input range: the C documents the precondition `-2^31 * Q <= a <= Q * 2^31`. The SAW proof IS
   discharged under exactly this precondition (`mont_in_range` in the model); equivalence outside it
   is NOT claimed by the proof. (Empirically the Cryptol model is a bit-exact transcription that also
@@ -36,8 +36,9 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     `reduce32` under `a <= 2^31-2^22-1`).
   - *`-fwrapv`* — used for the **forward NTT** proof. The NTT does unreduced int32 add/sub (`a[j] ± t`)
     that overflow for unbounded inputs, so we prove functional equivalence under two's-complement
-    wrapping (what the code computes; matches the mod-2^n model) and do NOT assert NTT overflow-freedom.
-    Proving overflow-freedom needs coefficient-bound composition across the 8 levels (v1.5).
+    wrapping (what the code computes; matches the mod-2^n model). Overflow-freedom is established
+    separately (Isabelle `ntt_overflow_free`, v1.5; see proof results) and bridged to the C by the
+    argument noted there — the `-fwrapv` proof itself asserts no overflow bound.
 - Anything not listed as proven is, explicitly, NOT proven.
 
 ## Modeling choices for `montgomery_reduce` (model/cryptol/MLDSA_NTT.cry)
@@ -67,9 +68,24 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   (`make saw`, exit 0). Proven on the `-fwrapv` bitcode (so all inputs, no bound precondition), with
   `montgomery_reduce` passed as an override and kept uninterpreted (`w4_unint_z3`) so the 1024
   butterfly calls reduce to a structural array equality. The Cryptol `ntt` model was also concretely
-  cross-checked against the C on two input vectors. **Not claimed:** NTT overflow-freedom (the
-  unreduced int32 add/sub overflow for unbounded inputs; bound composition is v1.5) and any Isabelle
-  model≡spec for the NTT.
+  cross-checked against the C on two input vectors.
+- **Forward NTT overflow-freedom (model level, Isabelle): VERIFIED (2026-06-11).** `make verify`
+  exits 0, no `sorry`/`oops`. Theorem `ntt_overflow_free` (`spec/isabelle/Assay_Equivalence.thy`):
+  for inputs with every coefficient in `+/-(2^31 - 2^27)`, the lifted model NTT keeps every
+  coefficient in `+/-2080309256 < 2^31 - 1` through all 8 levels. The per-butterfly lemmas
+  (`sint_add/sub_inrange`, `butterfly_node_*_bound`) establish that **every int32 add/sub stays in
+  `[-2^31, 2^31)` — no overflow** — and that every `montgomery_reduce` input stays in its half-open
+  precondition (so the OF-1 endpoint is never hit). Proof = induction over 8 levels (`nttLevel_bounded`:
+  one level grows `|coeff|` by `<= Q`, the montgomery output bound `|t| < Q` from
+  `montgomery_reduce_correct`), with a *total* coefficient invariant that sidesteps modular index
+  reasoning (OOB index = last element). This is the coefficient-bound composition that the `-fwrapv`
+  functional-equivalence proof deliberately sidesteps.
+  - **C-side claim (argued, not separately mechanized):** SAW gives C ≡ model for all inputs under
+    `-fwrapv`; Isabelle shows the model does not wrap under the bound; the nsw and `-fwrapv` bitcodes
+    differ only in signed-overflow poison, absent when no overflow occurs. Hence the reference C NTT
+    is overflow-free (no signed-overflow UB) and equals the spec under the bound. The brute-force SAW
+    mechanization of this bridge was computationally impractical (~3000 obligations; see ROADMAP /
+    branch `v1.5-saw-overflow-wip`); the meta-level argument is standard and sound.
 - The earlier 16-vector C-vs-Cryptol concrete cross-check (2026-06-01) remains as a secondary
   sanity check; the SAW proof above supersedes it for all in-range inputs.
 
@@ -100,7 +116,9 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   - `freeze_correct`: `is_freeze` (residue-preserving; output in `[0,Q)`) over the same domain,
     proven compositionally — reduce32's window `[-6283009, 6283008]` lies in `[-Q, Q)`, satisfying
     caddq's precondition. Chained with the SAW leg this gives C ≡ spec for the full `reduce.c` layer.
-- **NOT proven:** the forward NTT (model≡spec / overflow-freedom), optimized/native code, constant-time.
+- **NOT proven:** an Isabelle model≡FIPS-spec for the NTT *transform* (we have C≡model + model-level
+  overflow-freedom, not the negacyclic-transform correctness); the full SAW mechanization of the
+  nsw/`-fwrapv` overflow bridge; optimized/native code; constant-time.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

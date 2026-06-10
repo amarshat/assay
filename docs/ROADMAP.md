@@ -29,15 +29,25 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
 - This is the actual historical ML-DSA bug class (cf. ePrint 2026/1032's optimized-path overflow that
   survived KATs; Apple's missing-reduction InvNTT bug). It also needs an Isabelle FIPS-204 NTT spec
   (negacyclic, 8-level) validated against FIPS 204 Algorithms 41–42 — itself a substantial formalization.
-- **Status (2026-06-09): attempted in SAW, deferred to Isabelle.** The overflow-freedom proof was
-  prototyped on the **nsw** bitcode (bounded `montgomery_reduce` override proving output in `(-Q, Q)`,
-  plus an `ntt_in_range` input bound with headroom `2^27 > 8Q`); see branch `v1.5-saw-overflow-wip`.
-  The bounded override **proves** (and re-surfaced OF-1: the strict output bound needs the half-open
-  domain). The math is sound (max coefficient after 8 levels `= B + 8(Q-1) < 2^31-1`). But the full
-  `ntt` proof is **computationally impractical**: fully unrolling the 1024 butterflies yields ~3000 SMT
-  obligations and does not complete in practical wall-clock. The tractable route is **induction over
-  the 8 levels in Isabelle** — a single lemma "`nttLevel` grows max-|coeff| by `<= Q`", iterated 8x —
-  composed with the existing `-fwrapv` C≡model equivalence to conclude no-UB-under-bound on the C. Open.
+- **Overflow-freedom: DONE in Isabelle (2026-06-11).** Theorem `ntt_overflow_free`
+  (`spec/isabelle/Assay_Equivalence.thy`, no holes, `make verify` exits 0): for inputs within
+  `+/-(2^31 - 2^27)`, the lifted model NTT keeps every coefficient within `+/-2080309256 < 2^31 - 1`
+  through all 8 levels. The per-butterfly bounds (`sint_add/sub_inrange`, `butterfly_node_*_bound`)
+  establish that **every int32 add/sub stays in range (no overflow)** and that every
+  `montgomery_reduce` input stays in its (half-open) precondition — the **coefficient-bound
+  composition** invariant the `-fwrapv` proof sidesteps. Done by induction over the 8 levels (one
+  lemma `nttLevel_bounded`: a level grows `|coeff|` by `<= Q`, the montgomery output bound), NOT by
+  SAW unrolling. Key device: a *total* invariant over all indices (OOB falls back to the last
+  element, so we never reason about modular index bounds). The brute-force SAW attempt
+  (~3000 obligations, did not complete) is preserved on branch `v1.5-saw-overflow-wip`.
+- **C-side bridge (argued, not separately mechanized):** the SAW `-fwrapv` proof gives C ≡ model for
+  all inputs; the Isabelle result shows the model does not wrap under the bound; the two bitcodes
+  differ only in nsw poison, absent when no overflow occurs — so the reference C NTT is overflow-free
+  (no signed-overflow UB) and equals the spec under the bound. Mechanizing this last bridge in SAW is
+  what proved impractical; it is a standard, sound meta-level argument.
+- **Still open for v1.5:** an Isabelle FIPS-204 NTT *spec* (negacyclic, 8-level, Algorithms 41-42) and
+  a model ≡ spec proof for the NTT itself (we have functional equivalence to the Cryptol model and now
+  overflow-freedom, but not yet model ≡ FIPS-spec for the transform as we have for `reduce.c`).
 
 ## v2 — optimized ≡ reference (the credibility + bug-hunt step)
 Re-point the pipeline at **PQ Code Package's `mldsa-native`** (the maintained successor PQClean points

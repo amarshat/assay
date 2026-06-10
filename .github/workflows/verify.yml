@@ -1,13 +1,22 @@
 name: verify
 on:
-  workflow_dispatch:   # full pipeline is manual-only — it's a heavy ~60-90 min Isabelle/AFP build
+  workflow_dispatch:   # manual for now; with heap caching the warm path is fast (see below)
 
-# Full pipeline — SAW (C == Cryptol) + Isabelle (model == FIPS/math spec). Run on demand from the
-# Actions tab ("Run workflow") for a complete re-verification. The everyday gating check is the
-# separate, fast `saw` workflow that runs on every push. We cache only `.tools` (the downloaded
-# toolchain); caching the Isabelle heaps does NOT make `isabelle build` skip the AFP rebuild on
-# hosted runners, so the AFP/Cryptol session is (re)built each run (~50-90 min). macOS Apple Silicon
-# (matches the pinned arm64 SAW binary).
+# Full pipeline — SAW (C == Cryptol) + Isabelle (model == FIPS/math spec).
+#
+# Isabelle session-heap reuse is by a DIGEST of (theory content + build options), NOT mtimes or
+# paths (confirmed locally: reuse survives a tar round-trip AND sources touched newer than the
+# heaps). So persisting the heap store across runs makes `isabelle build` skip the heavy AFP/Cryptol
+# cone. The earlier belief that "caching heaps doesn't help" traced to a config gap: we cached only
+# `.tools` (the toolchain) and never `~/.isabelle/.../heaps` (where the heaps + per-session build
+# database live). We now cache that store. First run is a cold ~60-90 min AFP build that populates
+# the cache; subsequent runs restore it and only rebuild the tiny Assay session.
+#
+# (Thanks to Fabian Huch on the Isabelle Zulip for the content-addressable framing. For a build
+# *cluster* the robust route is the build_database/build_process DB; for this single runner,
+# correctly persisting the on-disk store is sufficient.)
+#
+# macOS Apple Silicon (matches the pinned arm64 SAW binary).
 jobs:
   verify:
     runs-on: macos-15
@@ -19,9 +28,16 @@ jobs:
         with:
           path: .tools
           key: tools-full-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}
+      - name: Cache Isabelle session heaps (AFP + Cryptol cone)
+        uses: actions/cache@v4
+        with:
+          # heaps + per-session build database (digests) — content/options addressed, so a fixed
+          # key derived from the pinned setup is correct (changes only when the toolchain pins change)
+          path: ~/.isabelle/Isabelle2025-2/heaps
+          key: isabelle-heaps-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_isabelle_cryptol.sh') }}
       - name: Set up toolchain (SAW, Cryptol, Isabelle, clang)
         run: ./scripts/setup.sh
-      - name: Build AFP + SAW 'Cryptol' Isabelle session
+      - name: Build AFP + SAW 'Cryptol' Isabelle session (reused from cache when warm)
         run: ./scripts/setup_isabelle_cryptol.sh
       - name: Reject proof holes (no sorry/oops/admit)
         run: |

@@ -497,6 +497,108 @@ proof (rule nth_seq_bounded)
     unfolding zetas_def by eval
 qed
 
+\<comment> \<open>the coefficient-bound invariant: every coefficient (over ALL indices, incl. OOB) is within +/-B.\<close>
+definition ntt_bounded :: "int \<Rightarrow> [256][32] \<Rightarrow> bool" where
+  "ntt_bounded B a \<longleftrightarrow> (\<forall> n. - B \<le> sint_seq (nth_seq a n) \<and> sint_seq (nth_seq a n) \<le> B)"
+
+\<comment> \<open>one butterfly leg: a coefficient (|.| \<le> B) plus/minus a montgomery term (|.| < Q) stays within
+    +/-(B+Q) and does not overflow int32, provided B leaves room for Q below 2^31.\<close>
+lemma butterfly_add_bound:
+  fixes x y :: "[32]"
+  assumes xlo: "- B \<le> sint_seq x" and xhi: "sint_seq x \<le> B"
+      and ylo: "- 8380417 < sint_seq y" and yhi: "sint_seq y < 8380417"
+      and Bhi: "B \<le> 2139103230"
+  shows "- (B + 8380417) \<le> sint_seq (x + y) \<and> sint_seq (x + y) \<le> B + 8380417"
+proof -
+  have rng: "- 2147483648 \<le> sint_seq x + sint_seq y \<and> sint_seq x + sint_seq y < 2147483648"
+    using xlo xhi ylo yhi Bhi by linarith
+  have "sint_seq (x + y) = sint (seq_to_word x + seq_to_word y)"
+    by (simp add: probe_sint_seq word_seq_convs seq_to_word)
+  also have "\<dots> = sint (seq_to_word x) + sint (seq_to_word y)"
+    by (rule sint_add_inrange) (use rng in \<open>simp add: probe_sint_seq\<close>)+
+  also have "\<dots> = sint_seq x + sint_seq y" by (simp add: probe_sint_seq)
+  finally have "sint_seq (x + y) = sint_seq x + sint_seq y" .
+  thus ?thesis using xlo xhi ylo yhi by simp
+qed
+
+lemma butterfly_sub_bound:
+  fixes x y :: "[32]"
+  assumes xlo: "- B \<le> sint_seq x" and xhi: "sint_seq x \<le> B"
+      and ylo: "- 8380417 < sint_seq y" and yhi: "sint_seq y < 8380417"
+      and Bhi: "B \<le> 2139103230"
+  shows "- (B + 8380417) \<le> sint_seq (x - y) \<and> sint_seq (x - y) \<le> B + 8380417"
+proof -
+  have rng: "- 2147483648 \<le> sint_seq x - sint_seq y \<and> sint_seq x - sint_seq y < 2147483648"
+    using xlo xhi ylo yhi Bhi by linarith
+  have "sint_seq (x - y) = sint (seq_to_word x - seq_to_word y)"
+    by (simp add: probe_sint_seq word_seq_convs seq_to_word)
+  also have "\<dots> = sint (seq_to_word x) - sint (seq_to_word y)"
+    by (rule sint_sub_inrange) (use rng in \<open>simp add: probe_sint_seq\<close>)+
+  also have "\<dots> = sint_seq x - sint_seq y" by (simp add: probe_sint_seq)
+  finally have "sint_seq (x - y) = sint_seq x - sint_seq y" .
+  thus ?thesis using xlo xhi ylo yhi by simp
+qed
+
+\<comment> \<open>the montgomery precondition follows from the coefficient/zeta bounds: |zeta|<=2^22, |coeff|<=B,
+    so |zeta*coeff| <= 2^22 * B < 2^31*Q.\<close>
+lemma mont_input_ok_of_bounds:
+  fixes z x :: int
+  assumes zlo: "- 4194304 \<le> z" and zhi: "z \<le> 4194304"
+      and xlo: "- B \<le> x" and xhi: "x \<le> B" and Bhi: "B \<le> 2139103230"
+  shows "mont_input_ok (z * x)"
+proof -
+  have az: "\<bar>z\<bar> \<le> 4194304" using zlo zhi by (simp add: abs_le_iff)
+  have ax: "\<bar>x\<bar> \<le> B" using xlo xhi by (simp add: abs_le_iff)
+  have "\<bar>z * x\<bar> \<le> 4194304 * B" unfolding abs_mult using az ax by (intro mult_mono) auto
+  also have "\<dots> \<le> 4194304 * 2139103230" using Bhi by simp
+  finally have "\<bar>z * x\<bar> \<le> 8972049234001920" by simp
+  thus ?thesis unfolding mont_input_ok_def MLDSA_NTT_Spec.q_def by (simp add: abs_le_iff)
+qed
+
+\<comment> \<open>a full butterfly node (coefficient + montgomery(zeta * coefficient)) is bounded by B+Q, for ANY
+    index expressions p, q, r -- the total invariant means we never need to resolve the indices.\<close>
+lemma butterfly_node_add_bound:
+  assumes B: "ntt_bounded B a" and Bhi: "B \<le> 2139103230"
+  shows "- (B + 8380417)
+       \<le> sint_seq (nth_seq a p + montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r)))
+       \<and> sint_seq (nth_seq a p + montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r)))
+       \<le> B + 8380417"
+proof -
+  have aP: "- B \<le> sint_seq (nth_seq a p)" "sint_seq (nth_seq a p) \<le> B"
+    using B unfolding ntt_bounded_def by auto
+  have aR: "- B \<le> sint_seq (nth_seq a r)" "sint_seq (nth_seq a r) \<le> B"
+    using B unfolding ntt_bounded_def by auto
+  have zQ: "- 4194304 \<le> sint_seq (nth_seq zetas kz)" "sint_seq (nth_seq zetas kz) \<le> 4194304"
+    using zeta_bound by auto
+  have ok: "mont_input_ok (sint_seq (nth_seq zetas kz) * sint_seq (nth_seq a r))"
+    by (rule mont_input_ok_of_bounds[OF zQ(1) zQ(2) aR(1) aR(2) Bhi])
+  have mb: "- 8380417 < sint_seq (montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r)))"
+       "sint_seq (montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r))) < 8380417"
+    using mont_butterfly_bound[OF ok] by simp_all
+  show ?thesis by (rule butterfly_add_bound[OF aP(1) aP(2) mb(1) mb(2) Bhi])
+qed
+
+lemma butterfly_node_sub_bound:
+  assumes B: "ntt_bounded B a" and Bhi: "B \<le> 2139103230"
+  shows "- (B + 8380417)
+       \<le> sint_seq (nth_seq a p - montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r)))
+       \<and> sint_seq (nth_seq a p - montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r)))
+       \<le> B + 8380417"
+proof -
+  have aP: "- B \<le> sint_seq (nth_seq a p)" "sint_seq (nth_seq a p) \<le> B"
+    using B unfolding ntt_bounded_def by auto
+  have aR: "- B \<le> sint_seq (nth_seq a r)" "sint_seq (nth_seq a r) \<le> B"
+    using B unfolding ntt_bounded_def by auto
+  have zQ: "- 4194304 \<le> sint_seq (nth_seq zetas kz)" "sint_seq (nth_seq zetas kz) \<le> 4194304"
+    using zeta_bound by auto
+  have ok: "mont_input_ok (sint_seq (nth_seq zetas kz) * sint_seq (nth_seq a r))"
+    by (rule mont_input_ok_of_bounds[OF zQ(1) zQ(2) aR(1) aR(2) Bhi])
+  have mb: "- 8380417 < sint_seq (montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r)))"
+       "sint_seq (montgomery_reduce (sext64 (nth_seq zetas kz) * sext64 (nth_seq a r))) < 8380417"
+    using mont_butterfly_bound[OF ok] by simp_all
+  show ?thesis by (rule butterfly_sub_bound[OF aP(1) aP(2) mb(1) mb(2) Bhi])
+qed
+
 end
 
 end

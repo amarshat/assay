@@ -162,6 +162,34 @@ proof -
   thus ?thesis by (simp add: mod_eq_dvd_iff)
 qed
 
+\<comment> \<open>--- v1.5: forward-NTT overflow-freedom (model level) ------------------------------------
+   The per-butterfly no-overflow fact: a signed int32 add/sub whose true integer result fits in
+   [-2^31, 2^31) does not wrap, so sint distributes over it. This is the heart of the
+   coefficient-bound invariant (each level grows |coeff| by < Q, the montgomery_reduce output bound;
+   8 levels stay < 2^31 given the input bound, so no int32 operation overflows). Same technique as
+   the caddq value step. \<close>
+lemma sint_add_inrange:
+  fixes x y :: "32 word"
+  assumes "- 2147483648 \<le> sint x + sint y" and "sint x + sint y < 2147483648"
+  shows "sint (x + y) = sint x + sint y"
+proof -
+  have "sint (x + y) = sint (word_of_int (sint x + sint y) :: 32 word)"
+    by (metis of_int_add of_int_sint)
+  also have "\<dots> = sint x + sint y" by (rule sint_of_int_eq) (use assms in simp)+
+  finally show ?thesis .
+qed
+
+lemma sint_sub_inrange:
+  fixes x y :: "32 word"
+  assumes "- 2147483648 \<le> sint x - sint y" and "sint x - sint y < 2147483648"
+  shows "sint (x - y) = sint x - sint y"
+proof -
+  have "sint (x - y) = sint (word_of_int (sint x - sint y) :: 32 word)"
+    by (metis of_int_diff of_int_sint)
+  also have "\<dots> = sint x - sint y" by (rule sint_of_int_eq) (use assms in simp)+
+  finally show ?thesis .
+qed
+
 \<comment> \<open>per Galois (saw-script #3298): use the cryptol_syntax bundle for hand-written proofs;
     cryptol_translation_syntax is meant only for translator output and removes notations like \<open>^\<close>.\<close>
 context includes cryptol_syntax begin

@@ -15,7 +15,7 @@
    montgomery_reduce over the half-open domain. Contains NO proof-hole command. *)
 
 theory Assay_Equivalence
-  imports MLDSA_NTT MLDSA_NTT_Spec
+  imports MLDSA_NTT MLDSA_NTT_Spec "Cryptol.SeqOOB"
 begin
 
 (* ----------------------------------------------------------------------------------------------
@@ -460,6 +460,41 @@ proof -
                                 (sint_seq (montgomery_reduce (sext64 z * sext64 x)))"
     using ok by (rule montgomery_reduce_correct)
   thus ?thesis unfolding is_montgomery_reduction_def MLDSA_NTT_Spec.q_def by simp
+qed
+
+\<comment> \<open>any indexed access is a list member (in-bounds element, or the last element when OOB --
+    OOB falls back to the last element; needs SeqOOB).\<close>
+lemma nth_list_in_set: "xs \<noteq> [] \<Longrightarrow> nth_list xs n \<in> set xs"
+  by (cases "n < length xs")
+     (auto simp: nth_list_def oob_list_elem_end_def last_in_set intro: nth_mem)
+
+lemma nth_seq_in_set:
+  fixes a :: "('n::len, 'a) seq"
+  assumes "0 < LEN('n)"
+  shows "nth_seq a n \<in> set (seq_to_list a)"
+proof -
+  have ne: "seq_to_list a \<noteq> []" using assms by simp
+  have "nth_seq a n = nth_list (seq_to_list a) n" by (simp add: seq_to_list)
+  thus ?thesis using nth_list_in_set[OF ne] by simp
+qed
+
+\<comment> \<open>a totally-quantified bound (over ALL indices, incl. OOB) follows from a list_all over the
+    elements, since every indexed access is a list member.\<close>
+lemma nth_seq_bounded:
+  fixes a :: "('n::len, 'a) seq"
+  assumes "0 < LEN('n)" and "list_all P (seq_to_list a)"
+  shows "P (nth_seq a n)"
+  using nth_seq_in_set[OF assms(1), of a n] assms(2) by (simp add: list_all_iff)
+
+\<comment> \<open>zeta-table bound: every twiddle factor (and hence every indexed access, incl. OOB) is within
+    +/- 2^22. max|zeta| = 4108315 < 4194304, with headroom for the montgomery precondition
+    (4194304 * (input bound + 8Q) < 2^31*Q). Discharged by evaluation over the concrete table.\<close>
+lemma zeta_bound:
+  "- 4194304 \<le> sint_seq (nth_seq zetas n) \<and> sint_seq (nth_seq zetas n) \<le> 4194304"
+proof (rule nth_seq_bounded)
+  show "(0::nat) < LEN(256)" by simp
+  show "list_all (\<lambda>x. - 4194304 \<le> sint_seq x \<and> sint_seq x \<le> 4194304) (seq_to_list zetas)"
+    unfolding zetas_def by eval
 qed
 
 end

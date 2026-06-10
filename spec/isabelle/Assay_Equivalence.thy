@@ -599,6 +599,30 @@ proof -
   show ?thesis by (rule butterfly_sub_bound[OF aP(1) aP(2) mb(1) mb(2) Bhi])
 qed
 
+lemma bound_if: assumes "P x" and "P y" shows "P (if c then x else y)"
+  using assms by simp
+
+\<comment> \<open>the per-level step: one NTT level grows the coefficient bound by at most Q. Every output
+    element is a butterfly node (add or sub leg), bounded by B+Q via the node lemmas; the total
+    invariant then follows since any indexed access is a list element.\<close>
+lemma nttLevel_bounded:
+  assumes B: "ntt_bounded B a" and Bhi: "B \<le> 2139103230"
+  shows "ntt_bounded (B + 8380417) (nttLevel i a)"
+proof -
+  have lst: "list_all (\<lambda>y. - (B + 8380417) \<le> sint_seq y \<and> sint_seq y \<le> B + 8380417)
+                      (seq_to_list (nttLevel i a))"
+    unfolding nttLevel_def Let_def
+    apply (simp only: map_seq_code list_all_iff set_map)
+    apply (rule ballI, erule imageE, hypsubst)
+    apply (rule bound_if)
+     apply (rule butterfly_node_add_bound[OF B Bhi])
+    apply (rule butterfly_node_sub_bound[OF B Bhi])
+    done
+  show ?thesis
+    unfolding ntt_bounded_def
+    by (rule allI, rule nth_seq_bounded[OF _ lst]) simp
+qed
+
 end
 
 end

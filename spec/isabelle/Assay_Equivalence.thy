@@ -623,6 +623,45 @@ proof -
     by (rule allI, rule nth_seq_bounded[OF _ lst]) simp
 qed
 
+\<comment> \<open>the forward NTT is the 8-fold composition of the levels (foldl over [0..7]).\<close>
+lemma ntt_unfold:
+  "ntt a0 = nttLevel 7 (nttLevel 6 (nttLevel 5 (nttLevel 4 (nttLevel 3
+            (nttLevel 2 (nttLevel 1 (nttLevel 0 a0)))))))"
+  unfolding ntt_def Let_def by (simp add: foldl_seq.rep_eq)
+
+\<comment> \<open>MAIN v1.5 RESULT (model level): the forward NTT is overflow-free. Given inputs within
+    +/-(2^31 - 2^27), every coefficient through all 8 levels stays within +/-(2^31 - 2^27 + 8Q)
+    < 2^31, so no int32 add/sub overflows and every montgomery_reduce input stays in range.
+    2^31 - 2^27 = 2013265920; 2013265920 + 8*8380417 = 2080309256 < 2^31 - 1.
+    Composed with the SAW -fwrapv C==model equivalence, the C reference NTT has no signed-overflow
+    UB under this input bound (and, no wrapping occurring, equals the spec).\<close>
+theorem ntt_overflow_free:
+  assumes "ntt_bounded 2013265920 a0"
+  shows "ntt_bounded 2080309256 (ntt a0)"
+proof -
+  have b1: "ntt_bounded 2021646337 (nttLevel 0 a0)"
+    using nttLevel_bounded[OF assms] by simp
+  have b2: "ntt_bounded 2030026754 (nttLevel 1 (nttLevel 0 a0))"
+    using nttLevel_bounded[OF b1] by simp
+  have b3: "ntt_bounded 2038407171 (nttLevel 2 (nttLevel 1 (nttLevel 0 a0)))"
+    using nttLevel_bounded[OF b2] by simp
+  have b4: "ntt_bounded 2046787588 (nttLevel 3 (nttLevel 2 (nttLevel 1 (nttLevel 0 a0))))"
+    using nttLevel_bounded[OF b3] by simp
+  have b5: "ntt_bounded 2055168005 (nttLevel 4 (nttLevel 3 (nttLevel 2 (nttLevel 1 (nttLevel 0 a0)))))"
+    using nttLevel_bounded[OF b4] by simp
+  have b6: "ntt_bounded 2063548422
+              (nttLevel 5 (nttLevel 4 (nttLevel 3 (nttLevel 2 (nttLevel 1 (nttLevel 0 a0))))))"
+    using nttLevel_bounded[OF b5] by simp
+  have b7: "ntt_bounded 2071928839
+              (nttLevel 6 (nttLevel 5 (nttLevel 4 (nttLevel 3 (nttLevel 2 (nttLevel 1 (nttLevel 0 a0)))))))"
+    using nttLevel_bounded[OF b6] by simp
+  have b8: "ntt_bounded 2080309256
+              (nttLevel 7 (nttLevel 6 (nttLevel 5 (nttLevel 4 (nttLevel 3
+                 (nttLevel 2 (nttLevel 1 (nttLevel 0 a0))))))))"
+    using nttLevel_bounded[OF b7] by simp
+  show ?thesis unfolding ntt_unfold using b8 by simp
+qed
+
 end
 
 end

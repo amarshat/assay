@@ -410,6 +410,58 @@ proof -
     using c1 c2 pos by simp
 qed
 
+\<comment> \<open>sint of the 64-bit product of two sign-extended 32-bit values is the integer product
+    (no 64-bit overflow: each factor is in [-2^31, 2^31), so the product is in (-2^62, 2^62]).\<close>
+lemma sint_sext64_mult:
+  fixes z x :: "[32]"
+  shows "sint_seq (sext64 z * sext64 x) = sint_seq z * sint_seq x"
+proof -
+  define zw :: "32 word" where "zw = seq_to_word z"
+  define xw :: "32 word" where "xw = seq_to_word x"
+  have zb: "- 2147483648 \<le> sint zw" "sint zw < 2147483648"
+    using sint_greater_eq[of zw] sint_lt[of zw] by simp_all
+  have xb: "- 2147483648 \<le> sint xw" "sint xw < 2147483648"
+    using sint_greater_eq[of xw] sint_lt[of xw] by simp_all
+  have prodb: "- 9223372036854775808 \<le> sint zw * sint xw
+             \<and> sint zw * sint xw < 9223372036854775808"
+  proof -
+    have az: "\<bar>sint zw\<bar> \<le> 2147483648" using zb by linarith
+    have ax: "\<bar>sint xw\<bar> \<le> 2147483648" using xb by linarith
+    have "\<bar>sint zw * sint xw\<bar> \<le> 2147483648 * 2147483648"
+      unfolding abs_mult using az ax by (intro mult_mono) auto
+    then have "- 4611686018427387904 \<le> sint zw * sint xw
+             \<and> sint zw * sint xw \<le> 4611686018427387904"
+      by (simp add: abs_le_iff)
+    thus ?thesis by linarith
+  qed
+  have w: "seq_to_word (sext64 z * sext64 x) = (scast zw * scast xw :: 64 word)"
+    unfolding zw_def xw_def by (simp add: word_seq_convs seq_to_word probe_sext64)
+  have hom: "(scast zw * scast xw :: 64 word) = word_of_int (sint zw * sint xw)"
+    by (metis of_int_mult scast_eq)
+  have "sint_seq (sext64 z * sext64 x) = sint (scast zw * scast xw :: 64 word)"
+    using w by (simp add: probe_sint_seq)
+  also have "\<dots> = sint zw * sint xw"
+    unfolding hom by (rule sint_of_int_eq) (use prodb in simp)+
+  finally show ?thesis
+    unfolding zw_def xw_def by (simp add: probe_sint_seq)
+qed
+
+\<comment> \<open>the butterfly's montgomery term is strictly bounded by Q, given its product input is within the
+    (half-open) montgomery domain. Reuses montgomery_reduce_correct.\<close>
+lemma mont_butterfly_bound:
+  fixes z x :: "[32]"
+  assumes "mont_input_ok (sint_seq z * sint_seq x)"
+  shows "- 8380417 < sint_seq (montgomery_reduce (sext64 z * sext64 x))
+       \<and> sint_seq (montgomery_reduce (sext64 z * sext64 x)) < 8380417"
+proof -
+  have ok: "mont_input_ok (sint_seq (sext64 z * sext64 x))"
+    using assms by (simp add: sint_sext64_mult)
+  have "is_montgomery_reduction (sint_seq (sext64 z * sext64 x))
+                                (sint_seq (montgomery_reduce (sext64 z * sext64 x)))"
+    using ok by (rule montgomery_reduce_correct)
+  thus ?thesis unfolding is_montgomery_reduction_def MLDSA_NTT_Spec.q_def by simp
+qed
+
 end
 
 end

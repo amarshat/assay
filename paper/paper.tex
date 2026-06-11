@@ -140,7 +140,7 @@ the two legs.
 default (overflow-checking) LLVM bitcode, so the proofs also assert absence of signed-overflow
 undefined behavior on the relevant ranges. \code{montgomery\_reduce} is verified under its documented
 input range. \code{reduce32} is verified under $a \le 2^{31} - 2^{22} - 1$, the bound that keeps the
-internal \code{a + (1<<22)} addition from overflowing. \code{caddq} is verified unconditionally.
+internal \code{a + (1{<}{<}22)} addition from overflowing. \code{caddq} is verified unconditionally.
 \code{freeze} is verified compositionally using the \code{reduce32} and \code{caddq} results as
 overrides. A mutation test confirms the \code{montgomery\_reduce} proof is non-vacuous: a deliberately
 wrong model is rejected with a counterexample.

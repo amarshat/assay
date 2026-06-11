@@ -41,9 +41,14 @@ publishable and noticeable. Risk: SAW-Rust is more experimental than SAW-C; Rust
 generics/traits can be awkward for MIR.
 
 ## Status
-- Target pinned: `ml-dsa = 0.1.1`.
-- Toolchain recipe confirmed compatible with SAW 1.5.1 (mir-json schema v11). See `scripts/setup_rust.sh`.
-- Not yet built/vendored.
+- **v2.0 (toolchain spike): DONE (2026-06-11).** SAW-Rust pipeline proven end to end — a smoke
+  `mir_verify` against a Cryptol spec succeeds (`proof/smoke/`). Toolchain pinned in
+  `scripts/setup_rust.sh`: nightly-2025-09-14 + mir-json `7e12cece` (schema v8, the commit SAW 1.5.1
+  bundles). Note: SAW 1.5.1 wants schema **v8**, not the v11 of mir-json HEAD — the smoke test caught
+  this.
+- Target pinned and vendored: `ml-dsa 0.1.1` + `module-lattice 0.2.3` (see `target/`).
+- **Next (v2.1):** model FIPS 204's hint rules and verify `hint.rs`/`verifying.rs` (the GHSA-class
+  spec-conformance target), and the `module_lattice` Barrett `reduce` / NTT arithmetic.
 
 ## Open findings
 _(none yet — this section is the private ledger; do not open public issues from here)_

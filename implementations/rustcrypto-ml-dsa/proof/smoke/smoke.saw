@@ -1,0 +1,15 @@
+// Pipeline sanity check: confirms the SAW-Rust toolchain (mir-json schema v8) loads into SAW 1.5.1
+// and mir_verify closes. Run from this directory after `scripts/setup_rust.sh`:
+//   export SAW_RUST_LIBRARY_PATH=<repo>/.tools/rlibs
+//   saw-rustc smoke.rs                 # -> smoke.linked-mir.json
+//   saw smoke.saw
+enable_experimental;
+m <- mir_load_module "smoke.linked-mir.json";
+let spec = do {
+    x <- mir_fresh_var "x" mir_u32;
+    y <- mir_fresh_var "y" mir_u32;
+    mir_execute_func [mir_term x, mir_term y];
+    mir_return (mir_term {{ if (x + y) >= 8380417 then (x + y) - 8380417 else (x + y) }});
+};
+ov <- mir_verify m "smoke::add_mod_q" [] false spec z3;
+print "SMOKE OK: SAW-Rust pipeline closes (mir_verify succeeded)";

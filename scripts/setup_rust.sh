@@ -42,6 +42,6 @@ mir-json --version
 ln -sfn "$MIRJSON_DIR/rlibs" "$RLIBS"
 
 echo
-echo "SAW-Rust toolchain ready (mir-json @ ${MIRJSON_COMMIT:0:12}, schema v11; SAW 1.5.1 compatible)."
+echo "SAW-Rust toolchain ready (mir-json @ ${MIRJSON_COMMIT:0:12}, schema v8; SAW 1.5.1 compatible)."
 echo "Add to your environment so SAW finds the translated stdlibs:"
 echo "  export SAW_RUST_LIBRARY_PATH=\"$RLIBS\""

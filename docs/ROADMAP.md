@@ -49,16 +49,42 @@ The whole strategy is **depth, scoped tight**. One finished proof beats three ha
   a model ≡ spec proof for the NTT itself (we have functional equivalence to the Cryptol model and now
   overflow-freedom, but not yet model ≡ FIPS-spec for the transform as we have for `reduce.c`).
 
-## v2 — optimized ≡ reference (the credibility + bug-hunt step)
-Re-point the pipeline at **PQ Code Package's `mldsa-native`** (the maintained successor PQClean points
-to, and closer to deployed code). This is **multi-month**, not "re-point the proof" — break it down:
-- **v2.0** — Isabelle NTT spec + reference NTT equivalence (depends on v1.5).
-- **v2.1** — optimized scalar primitives (AVX2/aarch64 lane-packed `montgomery_reduce`/`reduce32`).
-- **v2.2** — optimized NTT ≡ reference with the **lazy/deferred-reduction bound invariants** (the
-  genre that produced the wolfSSL overflow). Expect SAW loop/induction friction and the message-size
-  limitation Apple flagged for ML-DSA.
-- Note: the *deployed* hot paths (OpenSSL 3.5 / BoringSSL / AWS-LC; `mldsa-native` asm) are verified
-  by other toolchains (CBMC; HOL-Light/s2n-bignum); reference C has anchor value, not deployment value.
+## v2 — verify a used-but-unverified implementation (the finding + paper step)
+**Target chosen by survey (2026-06-11): the RustCrypto `ml-dsa` crate.** Rationale over the earlier
+`mldsa-native` plan: `mldsa-native` is a verification flagship (CBMC for the C, HOL-Light/s2n-bignum
+for the asm, even an `isabelle/` proof dir), so re-doing it with SAW is redundant and finds nothing.
+The RustCrypto `ml-dsa` crate is the opposite: the de-facto Rust ML-DSA crate (large supply-chain
+reach), **explicitly never independently audited** (its own docs say so for all RustCrypto PQC), and
+with a **track record of real defects still being found** — a timing side-channel in `decompose`
+(RUSTSEC-2025-0144) and a correctness bug where verification accepted duplicate hint indices because a
+`<` became `<=`, violating FIPS 204 (GHSA-5x2r-hc65-25f9). That last one is exactly a spec-conformance
+defect a verify-against-FIPS-204 pipeline catches, and it slipped in via a one-character change, so
+there is plausibly more to find. SAW reaches Rust via `mir-json` + `crucible-mir` (maintained, schema
+v11). Disclosure routes cleanly through RustCrypto's RUSTSEC/GHSA process (per CLAUDE.md: recorded
+privately, human-routed, never auto-filed).
+
+Crate layout maps to targets (bug-richest first):
+- `hint.rs` (hint encode/decode/use-hint — home of the duplicate-index bug), `verifying.rs`
+  (norm + hint checks), `algebra.rs` + `ntt.rs` (the arithmetic, analogous to our v1 work),
+  `signing.rs` (`decompose`, home of the timing bug), `sampling.rs`, `encode.rs`.
+
+Phased (multi-month):
+- **v2.0 — toolchain spike.** Stand up SAW-Rust: pinned Rust nightly + build `mir-json` matching SAW
+  1.5.1's schema (v11); get the crate's `algebra.rs`/`ntt.rs` core to MIR and a first trivial
+  `mir_verify`. De-risks the whole effort; this is the gating unknown.
+- **v2.1 — spec-conformance of the hint/verify logic.** Model FIPS 204's hint rules (strictly
+  increasing indices, `MakeHint`/`UseHint`) and prove `hint.rs`/`verifying.rs` conform. This is where
+  a defect of the GHSA genre would surface.
+- **v2.2 — arithmetic.** `algebra.rs`/`ntt.rs` reduce + NTT: functional correctness against a Cryptol
+  model, plus the overflow/coefficient-bound reasoning (reuse the v1.5 Isabelle machinery; Rust
+  release-mode arithmetic wraps, so overflow bugs are possible).
+- **Outcomes, honestly:** a finding routes to RUSTSEC/GHSA and anchors a paper; a clean result is the
+  *first formal verification of the de-facto Rust ML-DSA crate*. Either is publishable (TCHES-class)
+  and noticeable. **Risk:** SAW-Rust is more experimental than SAW-C, and RustCrypto's generics/traits
+  can be awkward for MIR; budget for tooling friction. Fallback target if Rust fights us: wolfSSL
+  `wolfcrypt/src/dilithium.c` (own implementation, deployed in wolfBoot, C = best SAW fit, unverified).
+- Note: the heavily-verified targets (`mldsa-native`, Apple corecrypto, OpenSSL/BoringSSL/AWS-LC) have
+  anchor value, not finding value; v2 deliberately avoids them.
 
 ## v3 — constant-time / secret-independence (frontier)
 - **Different tool, not this pipeline.** SAW≡Cryptol functional equivalence is not the CT tool; use

@@ -15,3 +15,14 @@ users pull, i.e. the supply-chain object under assay.
 
 Source files of interest (see `../README.md` for the per-file verification plan): `algebra.rs`,
 `ntt.rs`, `hint.rs`, `verifying.rs`, `signing.rs`.
+
+## Companion crate: `module-lattice`
+
+The field/polynomial/NTT arithmetic that `ml-dsa` builds on lives in `module-lattice` (also used by
+RustCrypto `ml-kem`), so it is vendored alongside.
+
+- **Crate:** `module-lattice`
+- **Version:** `0.2.3`
+- **`.crate` SHA-256:** `0c61b87c9683ab7cb1c6871d261ad5479b6b10ceb52c4352aaca3b5d35a8febe`
+- **Source:** `https://static.crates.io/crates/module-lattice/module-lattice-0.2.3.crate`
+- Arithmetic + NTT live in `module-lattice-0.2.3/src/algebra.rs` and `lib.rs`.

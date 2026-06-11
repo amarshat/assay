@@ -255,9 +255,9 @@ Apple's 2026 corecrypto verification covers ML-KEM and ML-DSA in production code
 and Isabelle, and is the direct methodological precedent; this paper applies the same public toolchain
 independently to reference C with a FIPS-derived specification. Deployed implementations in OpenSSL,
 BoringSSL, and AWS-LC, and the \code{mldsa-native} assembly, are verified by other toolchains such as
-CBMC and HOL-Light. Overflow and missing-reduction defects in optimized lattice code that passed test
-vectors motivate the overflow-freedom property; see for instance the optimized-path overflow reported
-in ePrint 2026/1032.
+CBMC and HOL-Light. Overflow and missing-reduction defects in optimized lattice arithmetic that
+escaped test vectors motivate the overflow-freedom property; the corecrypto verification reports
+catching a missing-reduction defect of this kind.
 
 \section{Conclusion}\label{sec:conclusion}
 
@@ -280,7 +280,6 @@ guidance, e.g. the saw-script discussion and the Isabelle Zulip, if you wish.]}
   \url{https://github.com/GaloisInc/saw-script}.
 \bibitem{pqclean} The PQClean project. \url{https://github.com/PQClean/PQClean}.
 \bibitem{dilithium} CRYSTALS-Dilithium. \url{https://github.com/pq-crystals/dilithium}.
-\bibitem{eprint20261032} [Author(s)]. \emph{[Title].} IACR ePrint 2026/1032. % TODO: fill exact citation
 \end{thebibliography}
 
 \end{document}

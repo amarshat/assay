@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # SAW-Rust toolchain for the `implementations/` Rust assays (e.g. RustCrypto ml-dsa).
 #
-# Confirmed compatible with the pinned SAW 1.5.1: this mir-json commit emits MIR JSON SCHEMA v11,
-# which SAW 1.5.1 expects. (Verified 2026-06-11.) Everything is pinned, per the project's
-# reproducibility-is-the-product rule.
+# Compatible with the pinned SAW 1.5.1: this mir-json commit is exactly the one SAW 1.5.1 bundles as
+# its `deps/mir-json` submodule, and it emits MIR JSON SCHEMA v8 (which SAW 1.5.1 consumes; SAW master
+# is on v11, hence the pin). Verified 2026-06-11 against a smoke `mir_verify`. Everything is pinned,
+# per the project's reproducibility-is-the-product rule.
 #
 # After running, export:   export SAW_RUST_LIBRARY_PATH="<repo>/.tools/rlibs"
 set -euo pipefail
@@ -11,7 +12,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TOOLS="$ROOT/.tools"                                   # gitignored, same as setup.sh
 NIGHTLY="nightly-2025-09-14"                           # pinned by mir-json's rust-toolchain.toml
-MIRJSON_COMMIT="13232df733daf3346463d82b13b846ffd21aafe9"  # GaloisInc/mir-json, schema v11
+MIRJSON_COMMIT="7e12cecee9aceefd903191f4bd888d68e9a9cc0a"  # = saw-script v1.5.1 deps/mir-json, schema v8
 MIRJSON_DIR="$TOOLS/mir-json"
 RLIBS="$TOOLS/rlibs"
 

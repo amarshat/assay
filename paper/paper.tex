@@ -1,0 +1,286 @@
+\documentclass[11pt]{article}
+
+% Self-contained: compiles on Overleaf or any standard TeX install with no extra class files.
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{microtype}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+\usepackage{xcolor}
+\usepackage{listings}
+\lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible,frame=single,
+        framesep=4pt,xleftmargin=4pt}
+
+\newcommand{\Q}{Q}
+\newcommand{\code}[1]{\texttt{#1}}
+
+\title{Machine-Checking the ML-DSA Reference Reduction Layer and\\
+       Forward-NTT Overflow-Freedom:\\
+       A Reproducible SAW$\to$Cryptol$\to$Isabelle Pipeline}
+
+% TODO(author): confirm name / affiliation / contact before submission.
+\author{Amar Akshat\\\texttt{amar.akshat@gmail.com}}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We report an independent, reproducible verification of the reduction layer and forward NTT of the
+PQClean reference implementation of ML-DSA (FIPS 204). The work connects three tools. SAW proves the
+C bit-for-bit equivalent to a Cryptol model. Isabelle/HOL proves that model equivalent to a
+specification derived from FIPS 204. The two legs are composed through the \code{cryptol-to-isabelle}
+translator, giving a single chain from C to specification. For \code{montgomery\_reduce},
+\code{reduce32}, \code{caddq}, and \code{freeze} this yields end-to-end correctness on the documented
+input ranges. For the forward NTT we prove functional equivalence under two's-complement wrapping,
+and separately a coefficient-bound (overflow-freedom) result by induction over the eight transform
+levels. The development uses none of Apple's corecrypto artifacts, and the specification is derived
+from FIPS 204. We also report two off-by-one errors in the upstream reference's documentation
+contracts, disclosed to pq-crystals/dilithium, and a negative result: a brute-force SAW overflow
+proof of the unrolled 256-point transform did not complete, whereas the Isabelle induction does. We
+claim no novelty over Apple's corecrypto verification, and no results about deployed or optimized
+code. The scope is the reference C, with its limitations stated explicitly. The full development is
+public and reproducible with a single command.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}
+
+ML-DSA (FIPS 204) is the NIST-standardized lattice signature scheme derived from CRYSTALS-Dilithium.
+Its security analysis assumes that implementations compute the specified function. Test vectors check
+that assumption on a finite set of inputs. Formal verification checks it for all inputs, which matters
+for arithmetic kernels whose bugs are input-dependent and can pass test vectors.
+
+In May 2026 Apple open-sourced a formal verification of corecrypto covering ML-KEM and ML-DSA, using
+SAW with Cryptol and Isabelle/HOL. That work verified production code. This paper asks a narrower and
+complementary question: can the same public toolchain be applied, independently and reproducibly, to
+the widely used \emph{reference} C of PQClean, with the specification written from FIPS 204 rather than
+reused from a vendor, and with the result honestly scoped. The answer is yes for the reduction layer
+and for an overflow-freedom property of the forward NTT, and the process surfaced two small upstream
+documentation defects.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+  \item An independent, reproducible, end-to-end verification of PQClean's ML-DSA reference
+  \code{reduce.c} primitives (\code{montgomery\_reduce}, \code{reduce32}, \code{caddq},
+  \code{freeze}): C $\equiv$ Cryptol via SAW, composed with Cryptol-model $\equiv$ FIPS-204-derived
+  specification via Isabelle/HOL, connected by the \code{cryptol-to-isabelle} translator
+  (Section~\ref{sec:reduce}). The development uses none of Apple's corecrypto artifacts.
+  \item A machine-checked coefficient-bound (overflow-freedom) result for the forward NTT, proven by
+  induction over the eight transform levels (Section~\ref{sec:ntt}).
+  \item Two off-by-one errors in the reference's documentation contracts, with reproductions, disclosed
+  upstream (Section~\ref{sec:findings}).
+  \item A methodological observation and a proof-engineering technique: a direct SAW proof of NTT
+  overflow-freedom on the fully unrolled 256-point transform did not complete in practical time, while
+  an Isabelle induction using a total coefficient invariant does (Sections~\ref{sec:ntt}
+  and~\ref{sec:scope}).
+\end{enumerate}
+
+\paragraph{Non-claims.} We state these up front because they bound the result.
+We claim no novelty of technique over Apple's corecrypto verification; this is reference C,
+independently reproduced. We do not verify deployed or optimized code (AVX2, aarch64, the
+\code{mldsa-native} successor). We do not prove NTT \emph{transform} correctness, that is, equivalence
+of the model to the negacyclic transform of FIPS 204 Algorithms 41 and 42; we prove C $\equiv$ model
+and overflow-freedom, not transform correctness. The C-side overflow-freedom statement is an argued
+composition, not a single mechanized theorem (Section~\ref{sec:ntt}). We say nothing about
+constant-time behavior.
+
+\section{Background}\label{sec:background}
+
+\paragraph{Target.} We verify PQClean \code{ml-dsa-44/clean}, files \code{reduce.c} and \code{ntt.c},
+pinned by commit hash. ML-DSA fixes the prime modulus $Q = 8380417$ and ring dimension $N = 256$.
+\code{montgomery\_reduce} maps a 64-bit input to a 32-bit value congruent to $a \cdot 2^{-32} \pmod
+Q$. \code{reduce32} is a Barrett-style reduction to a centered window. \code{caddq} adds $Q$ to a
+negative input. \code{freeze} is \code{caddq} after \code{reduce32}. The forward NTT applies eight
+levels of Cooley-Tukey butterflies, each using \code{montgomery\_reduce} on a product of a precomputed
+twiddle factor and a coefficient.
+
+\paragraph{Tools.} SAW (the Software Analysis Workbench) proves an LLVM function equivalent to a
+Cryptol specification by symbolic execution and SMT. Cryptol is a specification language for word-level
+algorithms. Isabelle/HOL is an interactive theorem prover. The \code{cryptol-to-isabelle} translator,
+first shipped with saw-script 1.5.1, lifts a Cryptol module into an Isabelle theory. We use it to
+connect the two proof legs: SAW relates C to the Cryptol model, and Isabelle relates the
+\emph{lifted} model to a FIPS-derived specification, so the composed chain runs from C to the
+specification. All tool versions are pinned (Section~\ref{sec:repro}).
+
+\section{The pipeline}\label{sec:pipeline}
+
+\begin{figure}[h]
+\centering
+\begin{lstlisting}[frame=none]
+   target C subroutine
+          |  (1) hand-translate
+          v
+   Cryptol model  --(2) SAW: C == Cryptol-->  proven (bit-exact)
+          |  (3) cryptol-to-isabelle
+          v
+   Isabelle model --(4) model == FIPS spec-->  proven (reduce.c layer)
+                                  ^
+                  spec written from FIPS 204; no vendor artifacts
+\end{lstlisting}
+\caption{The two-leg pipeline. Step 2 is SMT-checked; step 4 is an Isabelle proof. The composition is
+the contribution: a single chain from C to a specification.}
+\label{fig:pipeline}
+\end{figure}
+
+The model is hand-translated from the C at the exact bit widths, because the algorithms depend on
+two's-complement truncation and signed shifts, and SAW checks bit-for-bit equivalence
+(Figure~\ref{fig:pipeline}, step 1). Step 3 is mechanical: the translator regenerates the Isabelle
+theory from the Cryptol module. To prevent the lifted theory and the SMT-checked model from drifting
+apart, a continuous-integration check (\code{make lift-check}) regenerates the theory from the
+\code{.cry} source and diffs it against the committed copy, so no human-maintained link sits between
+the two legs.
+
+\section{The reduce.c layer}\label{sec:reduce}
+
+\paragraph{C $\equiv$ Cryptol.} SAW discharges bit-exact equivalence for all four functions on the
+default (overflow-checking) LLVM bitcode, so the proofs also assert absence of signed-overflow
+undefined behavior on the relevant ranges. \code{montgomery\_reduce} is verified under its documented
+input range. \code{reduce32} is verified under $a \le 2^{31} - 2^{22} - 1$, the bound that keeps the
+internal \code{a + (1<<22)} addition from overflowing. \code{caddq} is verified unconditionally.
+\code{freeze} is verified compositionally using the \code{reduce32} and \code{caddq} results as
+overrides. A mutation test confirms the \code{montgomery\_reduce} proof is non-vacuous: a deliberately
+wrong model is rejected with a counterexample.
+
+\paragraph{Model $\equiv$ specification.} In Isabelle we state each function's intended contract and
+prove the lifted model meets it, with no \code{sorry} or \code{oops}.
+\begin{itemize}
+  \item \code{montgomery\_reduce}: $2^{32} r \equiv a \pmod Q$ and $-Q < r < Q$ on the half-open domain
+  $-2^{31} Q \le a < 2^{31} Q$.
+  \item \code{caddq}: residue-preserving, and maps $[-Q, Q)$ into $[0, Q)$.
+  \item \code{reduce32}: residue-preserving, with output in the window $[-6283009, 6283008]$ on
+  $a \le 2^{31} - 2^{22} - 1$.
+  \item \code{freeze}: residue-preserving, with output in $[0, Q)$, proven from the previous two.
+\end{itemize}
+Composing with the SAW leg gives a statement from C to specification: on the documented ranges, each
+deployed reference function computes a correct residue modulo $Q$ within its proven output window. The
+windows above are the \emph{true reachable} windows, which differ from the documented ones for two
+functions (Section~\ref{sec:findings}).
+
+\section{Forward-NTT overflow-freedom}\label{sec:ntt}
+
+The forward NTT performs unreduced \code{int32} additions and subtractions, $a[j] \pm t$, which
+overflow for unbounded inputs. We prove its functional equivalence to the Cryptol model on a
+\code{-fwrapv} build, where signed overflow is defined as two's-complement wrapping. \code{montgomery\_reduce}
+is supplied as an uninterpreted override, so the $1024$ butterfly calls collapse to a structural array
+equality. This proof holds for all inputs but says nothing about overflow.
+
+Overflow-freedom is the property of interest, since it is the defect class behind known ML-DSA
+implementation bugs that passed test vectors. We prove it as a bound, in Isabelle, over the lifted
+model. Under an explicit input bound, every coefficient stays within \code{int32} through all eight
+levels. The statement is \code{ntt\_overflow\_free}: if every input coefficient lies in
+$\pm(2^{31} - 2^{27})$, then every coefficient of the transform lies in $\pm 2080309256 < 2^{31} - 1$.
+
+\paragraph{Proof.} The proof is by induction over the levels. A single per-level lemma states that one
+level grows the maximum coefficient magnitude by at most $Q$. The growth bound comes from the
+\code{montgomery\_reduce} output bound $|t| < Q$, reused from Section~\ref{sec:reduce}. Iterated eight
+times from an input bound with headroom $2^{27} > 8Q$, every intermediate value stays below $2^{31}$,
+so each \code{int32} addition and subtraction has its true result in $[-2^{31}, 2^{31})$ and does not
+overflow, and every \code{montgomery\_reduce} input stays within its (half-open) precondition.
+
+The per-butterfly step uses a small lemma: a signed 32-bit addition or subtraction whose true result
+fits in range does not wrap, so the signed integer value distributes over it. The montgomery
+precondition is discharged from the coefficient and twiddle-factor bounds: the twiddle factors satisfy
+$|\zeta| \le 2^{22}$ (verified by evaluation over the concrete table, where the maximum is $4108315$),
+so $|\zeta \cdot a| \le 2^{22} \cdot B < 2^{31} Q$.
+
+\paragraph{A total invariant.} The enabling device is the form of the invariant. The cryptol index
+operation is a strict access, but an out-of-bounds access returns the last element of the sequence.
+We therefore state the coefficient bound over \emph{all} indices, not only the valid ones. Every
+indexed access is then a bounded list member, in-bounds or out-of-bounds alike, so the proof never
+reasons about the modular index arithmetic of the butterfly network. That index arithmetic, expressed
+over machine words with shifts and divisions parameterized by the level, is the obstacle that made a
+direct SMT approach intractable (Section~\ref{sec:scope}).
+
+\paragraph{From the model to the C.} The Isabelle result is about the model. The C-side statement
+follows by composition, which we state explicitly rather than mechanize. SAW proves the C equal to the
+model for all inputs on the \code{-fwrapv} build. The Isabelle result shows the model does not wrap
+under the input bound. The overflow-checking and \code{-fwrapv} builds differ only in whether signed
+overflow is poison, and no overflow occurs under the bound. Hence the reference C NTT has no
+signed-overflow undefined behavior under the bound, and equals the model. We did not mechanize this
+bridge as one SAW theorem because the direct attempt did not complete; the argument is standard.
+
+\section{Findings}\label{sec:findings}
+
+Establishing the true output windows in Section~\ref{sec:reduce} surfaced two off-by-one errors in the
+reference's documentation comments. Both are documentation-contract defects, not miscomputations: the
+functions return correct residues, but the stated bounds are wrong at boundary inputs that real call
+sites do not reach. Both were verified against the shipping C.
+
+\paragraph{OF-1.} The \code{montgomery\_reduce} comment states $-Q < r < Q$ (strict) over the inclusive
+domain $-2^{31} Q \le a \le Q \cdot 2^{31}$. At $a = 2^{31} Q$ the function returns $r = Q$, which
+violates the strict upper bound. The guarantee that holds over the inclusive domain is $-Q \le r \le
+Q$; the strict bound holds on the half-open domain, which is what we specify.
+
+\paragraph{OF-2.} The \code{reduce32} comment states $-6283008 \le r \le 6283008$ for $a \le 2^{31} -
+2^{22} - 1$. That precondition is one-sided, so $a = -2143289344$ is admissible and returns $r =
+-6283009$, one below the stated bound. The stated bound holds only under the symmetric precondition
+$|a| \le 2^{31} - 2^{22} - 1$.
+
+Both comments are identical in \code{pq-crystals/dilithium} (the origin; PQClean re-namespaces it), so
+the finding was reported there as a single issue. We did not file automatically; disclosure was
+deliberate.
+
+\section{Scope and limitations}\label{sec:scope}
+
+We restate the boundaries of the result. The verified code is the reference C, not the deployed
+AVX2/aarch64 or the \code{mldsa-native} successor; deployed hot paths are verified by other tools. We
+prove C $\equiv$ model and overflow-freedom for the NTT, not its transform correctness against FIPS
+204. The C-side overflow-freedom statement is the composition argued in Section~\ref{sec:ntt}, not a
+single mechanized theorem. \code{montgomery\_reduce} is identical across ML-DSA-44/65/87, so the
+parameter pin is cosmetic for that function. We say nothing about constant-time behavior.
+
+\paragraph{A negative result.} We first attempted NTT overflow-freedom directly in SAW, on the
+overflow-checking bitcode, with a bounded \code{montgomery\_reduce} override and an input-coefficient
+precondition. The fully unrolled 256-point transform produces on the order of three thousand proof
+obligations. The proof was sound in principle and made monotonic progress, but did not complete in
+practical wall-clock time across repeated runs. The induction in Section~\ref{sec:ntt} replaces the
+unrolling with a single per-level lemma applied eight times, and runs in seconds. We record this
+because the choice of proof structure, not solver power, was decisive.
+
+\section{Reproducibility}\label{sec:repro}
+
+The development is public. All tool versions are pinned by a setup script: SAW 1.5.1 with its bundled
+Cryptol and \code{cryptol-to-isabelle}, Isabelle2025-2 with a pinned AFP snapshot, and a fixed clang.
+The target C is vendored with its commit hash. A single command, \code{make verify}, runs the lift
+check, the SAW leg, and the Isabelle leg, and exits non-zero if any step fails. Continuous integration
+runs the fast SAW gate on every push and the full pipeline on demand. The artifact is archived at
+\textsc{[Zenodo DOI: to be minted from the tagged release]}, and the source is at
+\url{https://github.com/amarshat/pqc-assay}.
+
+\section{Related work}\label{sec:related}
+
+Apple's 2026 corecrypto verification covers ML-KEM and ML-DSA in production code with SAW, Cryptol,
+and Isabelle, and is the direct methodological precedent; this paper applies the same public toolchain
+independently to reference C with a FIPS-derived specification. Deployed implementations in OpenSSL,
+BoringSSL, and AWS-LC, and the \code{mldsa-native} assembly, are verified by other toolchains such as
+CBMC and HOL-Light. Overflow and missing-reduction defects in optimized lattice code that passed test
+vectors motivate the overflow-freedom property; see for instance the optimized-path overflow reported
+in ePrint 2026/1032.
+
+\section{Conclusion}\label{sec:conclusion}
+
+We verified the reduction layer of the ML-DSA reference implementation end to end, from C to a
+FIPS-derived specification, and proved an overflow-freedom bound for the forward NTT by induction. The
+work is independent of vendor artifacts and reproducible with one command. It is not a result about
+deployed code, and it does not prove NTT transform correctness; both are natural next steps. Repointing
+the pipeline at the maintained \code{mldsa-native} successor, where the genuinely error-prone optimized
+arithmetic lives, is the path to a result about code that ships.
+
+\paragraph{Acknowledgments.} \textsc{[optional: thank the Galois and Isabelle communities for tool
+guidance, e.g. the saw-script discussion and the Isabelle Zulip, if you wish.]}
+
+\begin{thebibliography}{9}
+\bibitem{fips204} National Institute of Standards and Technology.
+  \emph{FIPS 204: Module-Lattice-Based Digital Signature Standard.} 2024.
+\bibitem{corecrypto} Apple. \emph{Formal verification of corecrypto.}
+  \url{https://github.com/apple/corecrypto/tree/2026-05}, 2026.
+\bibitem{saw} Galois, Inc. \emph{SAW: The Software Analysis Workbench.}
+  \url{https://github.com/GaloisInc/saw-script}.
+\bibitem{pqclean} The PQClean project. \url{https://github.com/PQClean/PQClean}.
+\bibitem{dilithium} CRYSTALS-Dilithium. \url{https://github.com/pq-crystals/dilithium}.
+\bibitem{eprint20261032} [Author(s)]. \emph{[Title].} IACR ePrint 2026/1032. % TODO: fill exact citation
+\end{thebibliography}
+
+\end{document}

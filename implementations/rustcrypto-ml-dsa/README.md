@@ -47,8 +47,12 @@ generics/traits can be awkward for MIR.
   bundles). Note: SAW 1.5.1 wants schema **v8**, not the v11 of mir-json HEAD — the smoke test caught
   this.
 - Target pinned and vendored: `ml-dsa 0.1.1` + `module-lattice 0.2.3` (see `target/`).
-- **Next (v2.1):** model FIPS 204's hint rules and verify `hint.rs`/`verifying.rs` (the GHSA-class
-  spec-conformance target), and the `module_lattice` Barrett `reduce` / NTT arithmetic.
+- **Next (v2.1): a FOCUSED audit of the bug-prone surface** (not the whole crate). Three targets,
+  chosen because they are exactly where defects have historically appeared:
+  1. `ct_div` Barrett precision (`algebra.rs`) — does it return `floor(x/M)` for all `x < Q`?
+  2. const-computed zetas (`ntt.rs`) — do all 256 entries match FIPS 204 Appendix B?
+  3. hint encode/decode conformance (`hint.rs`/`verifying.rs`) — the GHSA-class spec target.
+  Bounded (weeks), maximizes finding odds, shareable either way (a tight audit note, or a finding).
 
 ## Open findings
 _(none yet — this section is the private ledger; do not open public issues from here)_

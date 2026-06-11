@@ -35,4 +35,21 @@ plan. Nothing here is a finding yet; "smells" are places a bug could plausibly h
    used, analogous to the v1 reduce32 work but Barrett-generic.
 
 ## To vendor next
-- `module_lattice 0.2.3` (the arithmetic), alongside `ml-dsa 0.1.1`.
+- `module_lattice 0.2.3` (the arithmetic), alongside `ml-dsa 0.1.1`. (Done.)
+
+## Build bring-up (v2.1 spike, 2026-06-11)
+`cargo saw-build` compiles the whole dependency graph to MIR **except `der 0.8.0`**, where mir-json
+panics: `internal error: entered unreachable code: slice type should not occur here`
+(`src/analyz/ty_json.rs:1346`). `der` is a known limitation of this mir-json (schema v8); it is pulled
+in only by the crate's **dev-dependencies** (the `tests/pkcs8.rs` test) and the `pkcs8` default
+feature, neither of which is the arithmetic/hint logic we audit.
+- `cargo tree -e normal --no-default-features --features alloc` shows **no `der`** in the normal
+  graph, so the lib itself is clean; `cargo saw-build` drags `der` in because it also builds the
+  test/dev targets.
+- **Next step (the fix):** a separate *harness* crate that depends on
+  `ml-dsa = { default-features = false, features = ["alloc"] }` and calls the public API
+  (`MlDsa44` key_gen/sign/verify) to force monomorphization of the internal `reduce`/NTT/hint
+  functions. Dev-dependencies are not transitive, so the harness pulls no `der`. Then `cargo saw-build`
+  the harness, and `mir_verify` the specific internal functions by name from the linked MIR.
+- Status: toolchain + pipeline proven (smoke); real-crate MIR blocked only on the der dev-dep, fix
+  identified (harness). This is API-plumbing, not a fundamental unknown.

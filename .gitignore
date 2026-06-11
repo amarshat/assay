@@ -24,3 +24,5 @@ saw-out/
 # Local toolchain
 /.tools/
 paper/*.zip
+implementations/**/target/
+*.linked-mir.json

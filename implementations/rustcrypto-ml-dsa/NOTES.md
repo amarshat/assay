@@ -53,3 +53,24 @@ feature, neither of which is the arithmetic/hint logic we audit.
   the harness, and `mir_verify` the specific internal functions by name from the linked MIR.
 - Status: toolchain + pipeline proven (smoke); real-crate MIR blocked only on the der dev-dep, fix
   identified (harness). This is API-plumbing, not a fundamental unknown.
+
+## v2.1 real-crate MIR + first verify attempt (2026-06-11) — REACHED THE ARITHMETIC
+The harness crate works: `SigningKey::<MlDsa44>::from_seed` forces monomorphization, and
+`cargo saw-build` of the harness links **36 MIR files** including the real `ml_dsa`, `module_lattice`,
+`typenum`, `keccak` — **no der**. The crate is 2016 monomorphized functions. The Barrett reduce is
+`ml_dsa::algebra::BarrettReduce::reduce::_inst7d46f3ac9454f524` (takes `u32`, returns `u32`).
+SAW loads and *simulates* it; the proof `reduce(x) == x % q` is set up.
+
+Blockers reached (this is the shape of verifying CT crypto with SAW), in order:
+1. `core::hint::black_box` (optimizer barrier) — SAW can't translate it. **Fixed:** sound identity
+   override (`mir_unsafe_assume_spec`, one `u8` instance). Applies cleanly.
+2. `cmov` crate (`ct_select`/`ct_lt`) uses **inline aarch64 assembly** — SAW does MIR/LLVM, not asm.
+   `cmov` has a portable `soft.rs` backend but it's cfg-gated to non-asm arches, so the host build
+   picks the asm path. **Path forward (not yet done):** override the constant-time primitives
+   (`ct_select`, `ct_lt`, `ct_gt`, `ct_eq`) with functional specs — a small, fixed, sound set that
+   unblocks all the arithmetic at once. Alternative: build for a target whose cmov picks `soft`
+   (needs stdlibs re-translated for that target — heavier).
+
+Takeaway for the writeup: unlike the PQClean reference C (plain arithmetic), this crate is built on a
+constant-time primitive layer (`cmov` asm, `black_box`). Functionally verifying it with SAW requires
+modeling that CT layer with overrides first. That is the v2.1 next task, and it is bounded.

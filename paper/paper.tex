@@ -47,12 +47,14 @@ public and reproducible with a single command.
 
 \section{Introduction}\label{sec:intro}
 
-ML-DSA (FIPS 204) is the NIST-standardized lattice signature scheme derived from CRYSTALS-Dilithium.
+ML-DSA (FIPS 204)~\cite{fips204} is the NIST-standardized lattice signature scheme derived from
+CRYSTALS-Dilithium~\cite{dilithium}.
 Its security analysis assumes that implementations compute the specified function. Test vectors check
 that assumption on a finite set of inputs. Formal verification checks it for all inputs, which matters
 for arithmetic kernels whose bugs are input-dependent and can pass test vectors.
 
-In May 2026 Apple open-sourced a formal verification of corecrypto covering ML-KEM and ML-DSA, using
+In May 2026 Apple open-sourced a formal verification of corecrypto~\cite{corecrypto} covering ML-KEM
+and ML-DSA, using
 SAW with Cryptol and Isabelle/HOL. That work verified production code. This paper asks a narrower and
 complementary question: can the same public toolchain be applied, independently and reproducibly, to
 the widely used \emph{reference} C of PQClean, with the specification written from FIPS 204 rather than
@@ -88,7 +90,7 @@ constant-time behavior.
 
 \section{Background}\label{sec:background}
 
-\paragraph{Target.} We verify PQClean \code{ml-dsa-44/clean}, files \code{reduce.c} and \code{ntt.c},
+\paragraph{Target.} We verify PQClean~\cite{pqclean} \code{ml-dsa-44/clean}, files \code{reduce.c} and \code{ntt.c},
 pinned by commit hash. ML-DSA fixes the prime modulus $Q = 8380417$ and ring dimension $N = 256$.
 \code{montgomery\_reduce} maps a 64-bit input to a 32-bit value congruent to $a \cdot 2^{-32} \pmod
 Q$. \code{reduce32} is a Barrett-style reduction to a centered window. \code{caddq} adds $Q$ to a
@@ -96,7 +98,7 @@ negative input. \code{freeze} is \code{caddq} after \code{reduce32}. The forward
 levels of Cooley-Tukey butterflies, each using \code{montgomery\_reduce} on a product of a precomputed
 twiddle factor and a coefficient.
 
-\paragraph{Tools.} SAW (the Software Analysis Workbench) proves an LLVM function equivalent to a
+\paragraph{Tools.} SAW (the Software Analysis Workbench)~\cite{saw} proves an LLVM function equivalent to a
 Cryptol specification by symbolic execution and SMT. Cryptol is a specification language for word-level
 algorithms. Isabelle/HOL is an interactive theorem prover. The \code{cryptol-to-isabelle} translator,
 first shipped with saw-script 1.5.1, lifts a Cryptol module into an Isabelle theory. We use it to
@@ -256,8 +258,9 @@ and Isabelle, and is the direct methodological precedent; this paper applies the
 independently to reference C with a FIPS-derived specification. Deployed implementations in OpenSSL,
 BoringSSL, and AWS-LC, and the \code{mldsa-native} assembly, are verified by other toolchains such as
 CBMC and HOL-Light. Overflow and missing-reduction defects in optimized lattice arithmetic that
-escaped test vectors motivate the overflow-freedom property; the corecrypto verification reports
-catching a missing-reduction defect of this kind.
+escaped test vectors motivate the overflow-freedom property; a recent audit of reduction placement in
+production ML-DSA implementations~\cite{eprint1032}, and the corecrypto verification~\cite{corecrypto},
+both report defects of this kind.
 
 \section{Conclusion}\label{sec:conclusion}
 
@@ -280,6 +283,10 @@ toolchain.
   \url{https://github.com/GaloisInc/saw-script}.
 \bibitem{pqclean} The PQClean project. \url{https://github.com/PQClean/PQClean}.
 \bibitem{dilithium} CRYSTALS-Dilithium. \url{https://github.com/pq-crystals/dilithium}.
+\bibitem{eprint1032} [Authors -- fill from the ePrint page].
+  \emph{When Removing Reductions Goes Wrong: Auditing Reduction Placement in Production ML-DSA
+  Implementations.} IACR Cryptology ePrint Archive, Paper 2026/1032, 2026.
+  \url{https://eprint.iacr.org/2026/1032}.
 \end{thebibliography}
 
 \end{document}

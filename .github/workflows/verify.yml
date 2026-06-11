@@ -11,6 +11,8 @@ on:
 # `.tools` (the toolchain) and never `~/.isabelle/.../heaps` (where the heaps + per-session build
 # database live). We now cache that store. First run is a cold ~60-90 min AFP build that populates
 # the cache; subsequent runs restore it and only rebuild the tiny Assay session.
+# CONFIRMED on the hosted runner (2026-06-11): warm "Build AFP + Cryptol" step = 21s (was ~60-90 min);
+# total warm `verify` run ~3 min.
 #
 # (Thanks to Fabian Huch on the Isabelle Zulip for the content-addressable framing. For a build
 # *cluster* the robust route is the build_database/build_process DB; for this single runner,

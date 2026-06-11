@@ -16,8 +16,8 @@
 \newcommand{\Q}{Q}
 \newcommand{\code}[1]{\texttt{#1}}
 
-\title{Machine-Checking the ML-DSA Reference Reduction Layer and\\
-       Forward-NTT Overflow-Freedom:\\
+\title{Machine-Checking the ML-DSA Reference Reduction Layer,\\
+       with a Model-Level Overflow-Freedom Bound for the Forward NTT:\\
        A Reproducible SAW$\to$Cryptol$\to$Isabelle Pipeline}
 
 % TODO(author): confirm name / affiliation / contact before submission.
@@ -34,10 +34,11 @@ C bit-for-bit equivalent to a Cryptol model. Isabelle/HOL proves that model equi
 specification derived from FIPS 204. The two legs are composed through the \code{cryptol-to-isabelle}
 translator, giving a single chain from C to specification. For \code{montgomery\_reduce},
 \code{reduce32}, \code{caddq}, and \code{freeze} this yields end-to-end correctness on the documented
-input ranges. For the forward NTT we prove functional equivalence under two's-complement wrapping,
-and separately a coefficient-bound (overflow-freedom) result by induction over the eight transform
-levels. The development uses none of Apple's corecrypto artifacts, and the specification is derived
-from FIPS 204. We also report two off-by-one errors in the upstream reference's documentation
+input ranges. For the forward NTT we prove functional equivalence to the model under two's-complement
+wrapping, and we machine-check an overflow-freedom bound for the model by induction over the eight
+transform levels. The corresponding statement for the C reference follows by an argued composition of
+these two, which we state but do not mechanize. The development uses none of Apple's corecrypto
+artifacts, and the specification is derived from FIPS 204. We also report two off-by-one errors in the upstream reference's documentation
 contracts, disclosed to pq-crystals/dilithium, and a negative result: a brute-force SAW overflow
 proof of the unrolled 256-point transform did not complete, whereas the Isabelle induction does. We
 claim no novelty over Apple's corecrypto verification, and no results about deployed or optimized
@@ -63,8 +64,10 @@ SAW with Cryptol and Isabelle/HOL. That work verified production code. This pape
 complementary question: can the same public toolchain be applied, independently and reproducibly, to
 the widely used \emph{reference} C of PQClean, with the specification written from FIPS 204 rather than
 reused from a vendor, and with the result honestly scoped. The answer is yes for the reduction layer
-and for an overflow-freedom property of the forward NTT, and the process surfaced two small upstream
-documentation defects.
+and for a model-level overflow-freedom property of the forward NTT, and the process surfaced two small
+upstream documentation defects. We frame the contribution as honest replication and methodology, not
+deployment assurance: the deployed and optimized implementations, where overflow defects actually
+arise, are out of scope and identified as the next target.
 
 \paragraph{Contributions.}
 \begin{enumerate}
@@ -73,8 +76,9 @@ documentation defects.
   \code{freeze}): C $\equiv$ Cryptol via SAW, composed with Cryptol-model $\equiv$ FIPS-204-derived
   specification via Isabelle/HOL, connected by the \code{cryptol-to-isabelle} translator
   (Section~\ref{sec:reduce}). The development uses none of Apple's corecrypto artifacts.
-  \item A machine-checked coefficient-bound (overflow-freedom) result for the forward NTT, proven by
-  induction over the eight transform levels (Section~\ref{sec:ntt}).
+  \item A machine-checked overflow-freedom bound for the forward NTT \emph{model}, by induction over
+  the eight transform levels; the statement for the C reference follows by an argued composition that
+  we state but do not mechanize (Section~\ref{sec:ntt}).
   \item Two off-by-one errors in the reference's documentation contracts, with reproductions, disclosed
   upstream (Section~\ref{sec:findings}).
   \item A methodological observation and a proof-engineering technique: a direct SAW proof of NTT

@@ -192,6 +192,19 @@ cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir
   mutations (r0+1, r1+1, ~make_hint, use_hint+1) all yield counterexamples.
   Still open for #3: `bit_pack`/`bit_unpack` — the GHSA-5x2r-hc65-25f9 strictly-increasing-index
   validation lives in bit_unpack, array-level with data-dependent loops (omega=80, K=4 for MlDsa44).
+- **#3 (bit_unpack): symbolic verification BLOCKED by a tool limitation; adversarially TESTED clean
+  (2026-06-12).** crucible-mir (SAW 1.5.1) aborts ("attempted to read empty mux tree") on ANY
+  hybrid-array slice access: as_slice/Deref/iter/windows are `ptr::from_ref(..).cast::<T>()` +
+  `slice::from_raw_parts` (hybrid-array 0.4.12), pointer casts crucible-mir can't track. An assumed
+  override for `split_hint` applies but the failure just moves to the next slice op; overriding every
+  leaf would put the audited validation logic itself into the trust base — refused. Attempt + working
+  Option<Hint<MlDsa44>> ADT plumbing preserved in `proof/hint/bit_unpack_smoke.saw` (marked BLOCKED,
+  not in CI). **Fallback (TESTS, NOT PROOF):** `harness/src/lib.rs hint_validation_tests` exercise
+  bit_unpack through public `Signature::decode` with adversarial hint regions (the trailing 84 bytes):
+  duplicate index in one poly (THE GHSA case), decreasing index, decreasing cuts, cut > omega = 80,
+  nonzero padding after the last cut — all rejected; well-formed and same-index-across-polys
+  encodings accepted. 7/7 pass (`cargo +nightly-2025-09-14 test`). Revisit proof when crucible-mir
+  handles raw-pointer-cast slices (check SAW releases > 1.5.1).
 
 ## PORTABILITY: SAW names must NOT carry crate disambiguators (CI lesson, 2026-06-12)
 The first clean-runner CI run failed on `Couldn't find MIR function named:

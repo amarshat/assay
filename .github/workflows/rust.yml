@@ -68,6 +68,11 @@ jobs:
           cd implementations/rustcrypto-ml-dsa
           python3 proof/zetas/check_zetas.py build/mldsa_harness.linked-mir.json
 
+      - name: Adversarial hint-validation regression tests (bit_unpack via Signature::decode)
+        run: |
+          cd implementations/rustcrypto-ml-dsa/harness
+          CARGO_TARGET_DIR=/tmp/harness-test cargo +nightly-2025-09-14 test
+
       - name: Non-vacuity guard (SAW must reject mutated moduli)
         run: |
           sed -e 's/{{ 8380417 : \[32\] }}/{{ 8380416 : [32] }}/' \

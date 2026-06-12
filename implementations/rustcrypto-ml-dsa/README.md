@@ -75,8 +75,12 @@ generics/traits can be awkward for MIR.
   3. hint conformance (`hint.rs`) — **scalar layer DONE 2026-06-12, CLEAN.** SAW-verified against
      FIPS 204: `decompose` ≡ Algorithm 36, `high_bits` ≡ Algorithm 37, `make_hint` ≡ Algorithm 39,
      `use_hint` ≡ Algorithm 40, for **all** field elements (ML-DSA-44; `proof/hint/`, spec transcribed
-     from the standard, four mutations all rejected). No finding. **Remaining:** `bit_pack`/
-     `bit_unpack` — the literal GHSA-5x2r-hc65-25f9 site (strictly-increasing hint-index validation).
+     from the standard, four mutations all rejected). No finding. `bit_unpack` (the literal
+     GHSA-5x2r-hc65-25f9 site): **symbolic proof blocked by a SAW 1.5.1 tool limitation**
+     (crucible-mir cannot simulate hybrid-array's pointer-cast slice access; see `NOTES.md`), so it
+     is covered by **adversarial regression tests, not proof** — duplicate/decreasing indices,
+     decreasing cuts, cut > ω, nonzero padding all rejected through public `Signature::decode`
+     (7/7, `harness` test suite). No finding, stated at test strength only.
 
 ## Open findings
 _(none yet — this section is the private ledger; do not open public issues from here)_

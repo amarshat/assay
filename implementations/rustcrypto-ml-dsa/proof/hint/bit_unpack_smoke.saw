@@ -1,0 +1,85 @@
+enable_experimental;
+// ============================================================================
+// STATUS: BLOCKED — DO NOT WIRE INTO CI. This script does NOT pass.
+//
+// Goal was: symbolically execute Hint::<MlDsa44>::bit_unpack (the
+// GHSA-5x2r-hc65-25f9 site) toward a FIPS 204 Algorithm 21 conformance proof.
+// Even the concrete all-zero smoke input aborts with "attempted to read empty
+// mux tree" at hint.rs:130 (the cuts.iter() closure).
+//
+// Root cause (tool limitation, not a target bug): hybrid-array implements ALL
+// slice access — as_slice/Deref/iter/windows/index — via
+// `ptr::from_ref(self).cast::<T>()` + `slice::from_raw_parts` (hybrid-array
+// 0.4.12 src/lib.rs:177-198), a struct-to-element pointer cast that
+// crucible-mir in SAW 1.5.1 cannot track. Overriding ml_dsa's split_hint (done
+// below, override applies) just moves the failure to the next hybrid-array
+// slice op; every Array iteration inside bit_unpack would need its own assumed
+// override, including core FromIterator/collect internals — unbounded
+// trust-base growth for a function whose VALIDATION LOGIC is the very thing
+// under audit. Not acceptable.
+//
+// Fallback actually in force: adversarial regression tests through the public
+// Signature::decode (harness/src/lib.rs hint_validation_tests — duplicate
+// index, decreasing index, decreasing cuts, cut > omega, nonzero padding; all
+// reject; legal encodings accept). TESTS, NOT PROOF — recorded as such.
+// Revisit if/when SAW's crucible-mir gains raw-pointer-cast slice support.
+//
+// Kept as a record of the attempt + the working ADT plumbing for
+// Option<Hint<MlDsa44>> / EncodedHint, which a future proof will need.
+// ============================================================================
+// SMOKE: can SAW symbolically execute Hint::<MlDsa44>::bit_unpack at all, and is
+// the ADT plumbing right? Concrete all-zero input: cuts all 0 => every segment
+// empty, trailing indices all zero => valid => Some(all-false hint).
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+// typenum chains (MSB-first bits; UInt<UInt<...>, Bb>)
+let uterm = mir_adt (mir_find_adt m "typenum::uint::UTerm" []);
+let b0 = mir_adt (mir_find_adt m "typenum::bit::B0" []);
+let b1 = mir_adt (mir_find_adt m "typenum::bit::B1" []);
+let uint a b = mir_adt (mir_find_adt m "typenum::uint::UInt" [a, b]);
+let u84  = uint (uint (uint (uint (uint (uint (uint uterm b1) b0) b1) b0) b1) b0) b0;          // 1010100
+let u4   = uint (uint (uint uterm b1) b0) b0;                                                  // 100
+let u256 = uint (uint (uint (uint (uint (uint (uint (uint (uint uterm b1) b0) b0) b0) b0) b0) b0) b0) b0; // 100000000
+
+let u80  = uint (uint (uint (uint (uint (uint (uint uterm b1) b0) b1) b0) b0) b0) b0;          // 1010000
+
+let enc_adt = mir_find_adt m "hybrid_array::Array" [mir_u8, u84];                 // EncodedHint<MlDsa44>
+let ind_adt = mir_find_adt m "hybrid_array::Array" [mir_u8, u80];                 // EncodedHintIndices
+let cut_adt = mir_find_adt m "hybrid_array::Array" [mir_u8, u4];                  // EncodedHintCuts
+let row_adt = mir_find_adt m "hybrid_array::Array" [mir_bool, u256];              // Array<bool, 256>
+let mat_adt = mir_find_adt m "hybrid_array::Array" [mir_adt row_adt, u4];         // Array<row, 4>
+let mldsa44 = mir_adt (mir_find_adt m "ml_dsa::MlDsa44" []);
+let hint_adt = mir_find_adt m "ml_dsa::hint::Hint" [mldsa44];
+let opt_adt = mir_find_adt m "core::option::Option" [mir_adt hint_adt];
+
+let zero_row = mir_struct_value row_adt [mir_term {{ zero : [256] }}];
+let zero_hint = mir_struct_value hint_adt
+  [mir_struct_value mat_adt [mir_array_value (mir_adt row_adt) [zero_row, zero_row, zero_row, zero_row]]];
+
+// Override: split_hint = hybrid_array split_ref — unsafe pointer-cast layout
+// code crucible-mir cannot simulate ("empty mux tree"). Semantics, from
+// hybrid_array's split_ref: the (first 80, last 4) halves of the 84-byte array.
+// Modeled as fresh refs carrying exactly those contents — observationally
+// equivalent for the read-only consumer (bit_unpack only reads). Assumed spec;
+// recorded in docs/ASSUMPTIONS.md.
+let split_hint_spec = do {
+    y_ref <- mir_alloc (mir_adt enc_adt);
+    ys <- mir_fresh_var "ys" (mir_array 84 mir_u8);
+    mir_points_to y_ref (mir_struct_value enc_adt [mir_term ys]);
+    mir_execute_func [y_ref];
+    ind_ref <- mir_alloc (mir_adt ind_adt);
+    mir_points_to ind_ref (mir_struct_value ind_adt [mir_term {{ take`{80} ys }}]);
+    cut_ref <- mir_alloc (mir_adt cut_adt);
+    mir_points_to cut_ref (mir_struct_value cut_adt [mir_term {{ drop`{80} ys }}]);
+    mir_return (mir_tuple_value [ind_ref, cut_ref]);
+};
+sh <- mir_unsafe_assume_spec m "ml_dsa::param::{impl#5}::split_hint::_inst3119af6124a351f4" split_hint_spec;
+
+let unpack_zero_spec = do {
+    y_ref <- mir_alloc (mir_adt enc_adt);
+    mir_points_to y_ref (mir_struct_value enc_adt [mir_term {{ zero : [84][8] }}]);
+    mir_execute_func [y_ref];
+    mir_return (mir_enum_value opt_adt "Some" [zero_hint]);
+};
+ov <- mir_verify m "ml_dsa::hint::{impl#1}::bit_unpack::_inst3119af6124a351f4" [sh] false unpack_zero_spec z3;
+print "SMOKE OK: bit_unpack(zero) == Some(zero hint) — simulation + ADT plumbing work";

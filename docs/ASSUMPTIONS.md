@@ -43,8 +43,8 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
 
 ## v2 (Rust / RustCrypto `ml-dsa`) assumptions
 - **Assumed specs for the constant-time primitive layer (inline asm SAW cannot read).** The crate's
-  arithmetic bottoms out in CT primitives that SAW (MIR/LLVM) cannot translate, so the v2.1 proof
-  (`implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw`) replaces them with `mir_unsafe_assume_spec`
+  arithmetic bottoms out in CT primitives that SAW (MIR/LLVM) cannot translate, so the reduce proofs
+  (`implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw`) replace them with `mir_unsafe_assume_spec`
   *assumed* specs. These are sound iff each spec reproduces the primitive's true input/output relation;
   they are NOT verified against the asm (SAW cannot see it). This is the standard SAW handling of
   inline-asm/intrinsic leaves, but it IS part of the trust base:
@@ -52,15 +52,21 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     `*self = (condition != 0) ? *value : *self`. Justified by reading the asm (`tst {cond},0xff;
     csel {self},{value},{self},NE`) — `csel ...,NE` selects `value` when the `tst` cleared Z, i.e.
     when `condition != 0`. This is exactly the crate's documented `cmovnz` ("move if non-zero")
-    contract. It is the ONLY cmov instance reachable from the keygen harness (`cmovz`, `CmovEq`, and
-    the u16/u64 widths are not monomorphized on this surface).
+    contract. It is the only asm primitive on the `reduce` path; the sign/verify harness additionally
+    monomorphizes `<u32 as CmovEq>::cmoveq` (`{impl#4}`, used by `ct_eq` in `decompose`), but that is
+    NOT reached by the reduce proofs and NO assumed spec exists for it — it must be added (and
+    justified against its asm) when the decompose/hint surface is verified.
   - `core::hint::black_box`: assumed identity (it is an optimizer barrier with no semantic effect).
-- **Which `reduce` instance is covered.** Only the M = 2^d = 8192 (Power2Round) monomorphization is
-  reached by `SigningKey::<MlDsa44>::from_seed`; the mod-q and 2*gamma2 instances are out of scope
-  until a harness exercises the NTT-multiply / sign / verify paths (v2.2). For the power-of-two
-  modulus the Barrett shift is exact, so the result holds for all `u32` with no input precondition —
-  unlike the q / 2*gamma2 cases, which will carry an `x < M^2` precondition and a live
-  conditional-subtract branch (the actually bug-prone Barrett case).
+- **Which `reduce` instances are covered (v2.2, 2026-06-12): ALL THREE moduli the crate uses.**
+  The harness's sign/verify entry points force the M = q = 8380417 (final z reduction via
+  `mod_plus_minus::<SpecQ>`) and M = 2*gamma2 = 190464 (Decompose) monomorphizations in addition to
+  keygen's M = 2^d = 8192 (Power2Round). All three are proven `reduce(x) == x mod M` for **all**
+  `u32 x`, no precondition: 2^d because the power-of-two Barrett shift is exact, q and 2*gamma2
+  because both exceed 2^16 so the standard `x < M^2` Barrett condition covers the whole u32 domain —
+  and for those two the conditional-subtract branch is LIVE (the genuinely bug-prone Barrett-precision
+  case), checked exactly by Z3 over all u32. **Parameter-set scope:** 2*gamma2 = 190464 is the
+  ML-DSA-44 value; ML-DSA-65/87 use 2*gamma2 = 523776, a distinct monomorphization not in this MIR
+  and not claimed (q and 2^d are parameter-set-independent).
 - **Pinned, vendored target.** `ml-dsa 0.1.1` + `module-lattice 0.2.3` (provenance in
   `implementations/rustcrypto-ml-dsa/target/`). mir-json schema v8 = the commit SAW 1.5.1 bundles.
 
@@ -142,6 +148,14 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
 - **NOT proven:** an Isabelle model≡FIPS-spec for the NTT *transform* (we have C≡model + model-level
   overflow-freedom, not the negacyclic-transform correctness); the full SAW mechanization of the
   nsw/`-fwrapv` overflow bridge; optimized/native code; constant-time.
+- **RustCrypto ml-dsa Barrett `reduce`, all three moduli: VERIFIED (2026-06-12).**
+  `saw implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw` exits 0 (SAW 1.5.1 + Z3, MIR via
+  mir-json schema v8, nightly-2025-09-14). Claims discharged, each for **all** `u32 x` with no
+  precondition: `reduce(x) == x mod q` (q = 8380417), `reduce(x) == x mod 190464` (2*gamma2,
+  ML-DSA-44), `reduce(x) == x mod 8192` (2^d). The q and 2*gamma2 instances exercise the live
+  conditional-subtract branch (Barrett precision). **Non-vacuity checked:** mutating each modulus in
+  the spec (8380416 / 190465 / 8191) makes SAW fail with a counterexample. Trust base: the two
+  assumed CT-layer specs above ("v2 assumptions") plus mir-json translation soundness.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

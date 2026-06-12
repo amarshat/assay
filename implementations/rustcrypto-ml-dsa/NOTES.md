@@ -102,35 +102,57 @@ modeling that CT layer with overrides first. That is the v2.1 next task, and it 
   the M=q monomorphization lands in the MIR; then the proof carries a real `x < M^2` precondition and
   the conditional-subtract branch becomes live (the genuinely bug-prone case — Barrett precision).
 
-## RESTART CAVEAT + how to rebuild the MIR (read first after reboot)
-The linked MIR `reduce.saw` loads lives in **`/tmp/mldsa-harness/.../mldsa_harness-*.linked-mir.json`**.
-`/tmp` is volatile — **it is gone after a reboot**, and the hash in the filename can change on rebuild,
-so `proof/reduce/reduce.saw`'s `mir_load_module` path will need updating. To regenerate:
+## v2.2 DONE (2026-06-12): ALL THREE Barrett moduli verified, mod-q conditional-subtract live
+`proof/reduce/reduce.saw` now proves `reduce(x) == x mod M` for **all u32 x** for every modulus the
+crate instantiates — M = q = 8380417, M = 2*gamma2 = 190464 (ML-DSA-44), M = 2^d = 8192. `saw` exits
+0; non-vacuity checked per-instance (mutated moduli 8380416 / 190465 / 8191 each yield a
+counterexample).
+- **Harness extension that forced the instances:** `sign44` (via `Signer`, deterministic — no RNG
+  plumbing needed) and `verify44` (via `Verifier`) in `harness/src/lib.rs`. The mod-q instance comes
+  from the final `z.mod_plus_minus::<SpecQ>()` in `signing.rs:362`; 2*gamma2 from `decompose`. MIR
+  grew 2016 → 2836 fns.
+- **Instance identification** (by MULTIPLIER constant in the MIR body): `_inst3390e630c0020d00` has
+  8396807 = floor(2^46/q) ⇒ M = q; `_inst805f6f80791ad6a1` has 360800 = floor(2^36/190464) ⇒
+  M = 2*gamma2; `_inst7d46f3ac9454f524` has 32768 ⇒ M = 2^d (the v2.1 one).
+- **Stronger than planned: NO precondition.** The plan expected `x < M^2`. But q and 2*gamma2 both
+  exceed 2^16, so M^2 > 2^32 and the Barrett condition holds for every u32 — the proof quantifies
+  over the full domain, conditional subtract live. (For 2^d = 8192, M^2 = 2^26 < 2^32 does NOT cover
+  u32, but power-of-two exactness does — the v2.1 argument.)
+- **Trust base unchanged.** sign/verify monomorphize one new asm leaf (`<u32 as CmovEq>::cmoveq`,
+  used by `ct_eq` in decompose) but it is NOT on the reduce path, so the proofs still need only the
+  two v2.1 assumed specs (`black_box` identity + `<u32 as Cmov>::cmovnz`). `cmoveq`'s spec
+  (`*output = (self == rhs) ? input : *output`, from cmov-0.5.4's eor/cmp/csel-EQ) will be needed for
+  the decompose/hint surface later — documented in ASSUMPTIONS.md.
+- **Parameter-set scope:** harness is MlDsa44; ML-DSA-65/87's 2*gamma2 = 523776 is a different
+  monomorphization, not in this MIR, not claimed. q and 2^d are parameter-set-independent.
+- This closes NOTES smell #5 (Barrett reduce) for ML-DSA-44's moduli. Smells #1 (ct_div), #2 (zetas
+  vs FIPS 204 App B), #3 (hint logic) remain the focused-audit queue.
+
+## How to rebuild the MIR (now repo-local and reboot-proof)
+The build lives in the gitignored **`implementations/rustcrypto-ml-dsa/build/`** (no more `/tmp`),
+and the build step refreshes a **stable symlink** `build/mldsa_harness.linked-mir.json` that
+`proof/reduce/reduce.saw` loads via a relative path — so rebuilds (which change the hash in the real
+filename) and reboots no longer break the script. To regenerate from scratch:
 ```
 # 1. toolchain (installs pinned nightly-2025-09-14 + mir-json @7e12cece, schema v8; rlibs -> .tools/rlibs)
 ./scripts/setup_rust.sh
 export SAW_RUST_LIBRARY_PATH=$PWD/.tools/rlibs
 # 2. build the harness crate to MIR (dev-deps non-transitive => no `der`)
 cd implementations/rustcrypto-ml-dsa/harness
-mkdir -p /tmp/mldsa-harness
-CARGO_TARGET_DIR=/tmp/mldsa-harness cargo +nightly-2025-09-14 saw-build
-# 3. point reduce.saw at the new path, then:  saw proof/reduce/reduce.saw   (expect: Proof succeeded!, exit 0)
-ls /tmp/mldsa-harness/target/aarch64-apple-darwin/debug/deps/*.linked-mir.json
+CARGO_TARGET_DIR=$PWD/../build cargo +nightly-2025-09-14 saw-build
+# 3. refresh the stable symlink (the hash can change when deps/toolchain change)
+cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir.json mldsa_harness.linked-mir.json
+# 4. from the repo root:  .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw
+#    (expect: three "Proof succeeded!" + exit 0)
 ```
-Note: a better fix (part of TODO-c below) is to build into a repo-local, gitignored dir
-(`implementations/rustcrypto-ml-dsa/build/`) instead of `/tmp`, and have `reduce.saw` take the path as
-an arg / env var so CI and reboots don't break it.
 
-## TODO after restart — agreed plan a / b / c
-- **(a) Commit this milestone.** DONE in the same commit that saved this note (the first real verify +
-  cmov overrides + ASSUMPTIONS/NOTES/README updates).
-- **(b) v2.2 harness to reach mod-q `reduce`.** Extend `harness/src/lib.rs` to also call sign and/or
-  verify (`SigningKey::sign` / `VerifyingKey::verify`) so the NTT-multiply path monomorphizes the
-  M = q (and 2*gamma2) `reduce` instances. Then write the mod-q proof: spec `reduce(x) == x % q` under
-  the **`x < M^2`** precondition (the conditional-subtract branch is now LIVE — this is the
-  Barrett-precision case where a real bug could hide). Expect possibly more cmov widths (u64) and more
-  CT leaves to override — enumerate with the `python3 ... 'cmov' in name` scan and add specs as needed.
-- **(c) Wire `rust.yml` CI** once (a) lands and the build path is repo-local (not `/tmp`): a workflow
-  mirroring `saw.yml` that runs `setup_rust.sh`, builds the harness MIR, and runs `saw reduce.saw`,
-  gated to exit 0. Cache `.tools/rlibs` + the nightly toolchain. Do NOT gate on it until the path is
-  deterministic (see RESTART CAVEAT) and the build is reproducible on a clean runner.
+## TODO — remaining plan
+- **(a) Commit v2.1 milestone.** DONE (5b9eb74).
+- **(b) v2.2 mod-q reduce.** DONE (this section).
+- **(c) Wire `rust.yml` CI:** a workflow mirroring `saw.yml` that runs `setup_rust.sh`, builds the
+  harness MIR (repo-local path is now deterministic), refreshes the symlink, and runs `saw
+  proof/reduce/reduce.saw`, gated on exit 0. Cache `.tools/rlibs` + the pinned nightly. Verify it is
+  reproducible on a clean macos-15 arm64 runner before treating it as a gate.
+- **(d) The focused audit (next verification work):** smells #1 ct_div precision (claim:
+  `ct_div(x) == x / M` for all x < Q, for each divisor used), #2 zetas table vs FIPS 204 Appendix B,
+  #3 hint encode/decode/use conformance (the GHSA-class target).

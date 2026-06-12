@@ -1,5 +1,10 @@
 enable_experimental;
-m <- mir_load_module "/tmp/mldsa-harness/target/aarch64-apple-darwin/debug/deps/mldsa_harness-0b1a2b5e36a33ccc.linked-mir.json";
+// Linked MIR built by `cargo +nightly-2025-09-14 saw-build` of harness/ with
+// CARGO_TARGET_DIR=../../build (see NOTES.md "rebuild recipe"). The build step
+// refreshes the stable symlink build/mldsa_harness.linked-mir.json so this
+// path survives rebuilds (the hash in the real filename does not).
+// SAW resolves this path relative to THIS script's directory.
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
 
 // ---------------------------------------------------------------------------
 // Override 1: core::hint::black_box — an optimizer barrier that is the identity
@@ -47,26 +52,41 @@ let cmovnz_u32_spec = do {
 cm <- mir_unsafe_assume_spec m "cmov/7f670710::backends::aarch64::{impl#1}::cmovnz[0]" cmovnz_u32_spec;
 
 // ---------------------------------------------------------------------------
-// The actual claim. NOTE on WHICH instance this is:
-//   `BarrettReduce::reduce` is generic over the modulus M (ml-dsa needs three:
-//   q = 8 380 417, 2^d = 8192, and 2*gamma2). The ONLY monomorphization the
-//   keygen harness (`SigningKey::<MlDsa44>::from_seed`) forces into the MIR is
-//   M = 2^d = 8192 — the Power2Round modulus. (Confirmed from the symbolic term:
-//   MULTIPLIER = 32768 = 2^15, SHIFT = 28, M = 8192. SHIFT = 2*(ilog2(8192)+1) = 28
-//   and MULTIPLIER = 2^28/8192 = 2^15 match the source exactly.)
+// The claims. `BarrettReduce::reduce` is generic over the modulus M; ml-dsa
+// instantiates it at exactly three moduli (algebra.rs):
+//   q = 8 380 417  (final z reduction, mod_plus_minus::<SpecQ>, signing.rs)
+//   2^d = 8192     (Power2Round)
+//   2*gamma2 = 190 464 for ML-DSA-44 (Decompose)
+// The sign44/verify44 harness entry points force all three monomorphizations
+// into the MIR (keygen alone only forces 2^d — the v2.1 result).
 //
-//   For this power-of-two M the Barrett quotient is EXACT for every input:
-//   (x * 2^15) >> 28 = x >> 13 = floor(x/8192), so remainder = x mod 8192 < 8192
-//   always, the conditional `ct_select` always takes the small branch, and
-//   reduce(x) = x mod 8192 for ALL u32 x (no input precondition needed).
+// Instance identification (from each instance's MULTIPLIER constant in the MIR):
+//   _inst3390e630c0020d00 : MULTIPLIER = 8396807 = floor(2^46 / q)        -> M = q
+//   _inst805f6f80791ad6a1 : MULTIPLIER = 360800  = floor(2^36 / 190464)   -> M = 2*gamma2
+//   _inst7d46f3ac9454f524 : MULTIPLIER = 32768   = 2^28 / 8192            -> M = 2^d
 //
-//   The mod-q instance is NOT reached by keygen; verifying it needs a harness
-//   that exercises NTT multiply (sign/verify path). Tracked for v2.2.
+// Why NO input precondition, for all three:
+//   - M = 8192 is a power of two, so the Barrett quotient (x*2^15)>>28 = x>>13
+//     is exact for every u32 (the conditional subtract never fires).
+//   - For M = q and M = 2*gamma2 the standard Barrett argument needs x < M^2;
+//     both moduli exceed 2^16, so M^2 > 2^32 covers ALL u32 inputs. Here the
+//     conditional-subtract branch IS live — this is the Barrett-precision case
+//     where a real bug could hide — and Z3 checks exactness over the full u32
+//     domain (no overflow: x*MULTIPLIER < 2^56 fits the u64 intermediate).
 // ---------------------------------------------------------------------------
-let reduce_spec = do {
+let reduce_spec modulus = do {
     x <- mir_fresh_var "x" mir_u32;
     mir_execute_func [mir_term x];
-    mir_return (mir_term {{ x % 8192 }});
+    mir_return (mir_term {{ x % modulus }});
 };
-ov <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst7d46f3ac9454f524[0]" [bb, cm] false reduce_spec z3;
-print "VERIFIED: RustCrypto ml-dsa Barrett reduce(x) == x mod 8192 (2^d, Power2Round modulus) for all u32 x";
+
+ov_q <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst3390e630c0020d00[0]" [bb, cm] false (reduce_spec {{ 8380417 : [32] }}) z3;
+print "VERIFIED: Barrett reduce(x) == x mod q (q = 8380417, field modulus) for all u32 x";
+
+ov_g2 <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst805f6f80791ad6a1[0]" [bb, cm] false (reduce_spec {{ 190464 : [32] }}) z3;
+print "VERIFIED: Barrett reduce(x) == x mod 2*gamma2 (190464, ML-DSA-44 Decompose modulus) for all u32 x";
+
+ov_2d <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst7d46f3ac9454f524[0]" [bb, cm] false (reduce_spec {{ 8192 : [32] }}) z3;
+print "VERIFIED: Barrett reduce(x) == x mod 2^d (8192, Power2Round modulus) for all u32 x";
+
+print "ALL THREE BarrettReduce moduli used by RustCrypto ml-dsa (MlDsa44) verified exact on the full u32 domain";

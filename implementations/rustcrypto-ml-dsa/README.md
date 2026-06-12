@@ -53,7 +53,17 @@ generics/traits can be awkward for MIR.
   `mir_unsafe_assume_spec` overrides for the CT layer (`<u32 as Cmov>::cmovnz` + `black_box`); see
   `NOTES.md` and `docs/ASSUMPTIONS.md`. Non-vacuity checked (a mutated spec fails). This is the first
   tool-verified statement about the real RustCrypto crate's arithmetic.
-- **Next (v2.1/2.2): a FOCUSED audit of the bug-prone surface** (not the whole crate). Three targets,
+- **v2.2 Barrett reduce, ALL moduli: DONE (2026-06-12).** Harness extended with sign/verify entry
+  points (`sign44`/`verify44`), which force the remaining `BarrettReduce` monomorphizations into the
+  MIR. `proof/reduce/reduce.saw` now proves `reduce(x) == x mod M` for **all** `u32 x`, no
+  precondition, for all three moduli the crate uses: **q = 8380417** (final z reduction in signing),
+  **2·γ₂ = 190464** (Decompose, ML-DSA-44), and **2^d = 8192** (Power2Round). For q and 2·γ₂ the
+  conditional-subtract branch is live — the Barrett-precision case where bugs hide — and Z3 checks
+  exactness over the full u32 domain. Non-vacuity checked per instance (mutated moduli fail). Trust
+  base unchanged (same two CT-layer assumed specs). The MIR build is now repo-local (`build/`,
+  gitignored) behind a stable symlink, so rebuilds/reboots no longer break the proof script. Scope:
+  ML-DSA-65/87's 2·γ₂ = 523776 is a different monomorphization, not in this MIR, not claimed.
+- **Next: a FOCUSED audit of the bug-prone surface** (not the whole crate). Three targets,
   chosen because they are exactly where defects have historically appeared:
   1. `ct_div` Barrett precision (`algebra.rs`) — does it return `floor(x/M)` for all `x < Q`?
   2. const-computed zetas (`ntt.rs`) — do all 256 entries match FIPS 204 Appendix B?

@@ -1,0 +1,91 @@
+/* FIPS 204 hint-layer algorithms, ML-DSA-44 parameter set, transcribed directly
+ * from the standard:
+ *
+ *   Algorithm 36 Decompose(r):   r0 = r mod+- (2*gamma2);
+ *                                if r - r0 == q - 1 then (r1, r0) = (0, r0 - 1)
+ *                                else r1 = (r - r0) / (2*gamma2)
+ *   Algorithm 37 HighBits(r)  =  Decompose(r).r1
+ *   Algorithm 38 LowBits(r)   =  Decompose(r).r0
+ *   Algorithm 39 MakeHint(z,r) = [[ HighBits(r+z) != HighBits(r) ]]
+ *   Algorithm 40 UseHint(h,r):   m = (q-1)/(2*gamma2);
+ *                                (r1, r0) = Decompose(r);
+ *                                if h /\ r0 >  0 then (r1 + 1) mod m
+ *                                if h /\ r0 <= 0 then (r1 - 1) mod m
+ *                                else r1
+ *
+ * ML-DSA-44: q = 8380417, gamma2 = (q-1)/88 = 95232, 2*gamma2 = 190464,
+ * m = (q-1)/(2*gamma2) = 44.
+ *
+ * mod+- is the centered residue (FIPS 204 Section 2.3): r mod+- a is the unique
+ * r0 with -a/2 < r0 <= a/2 and r0 == r (mod a).
+ *
+ * REPRESENTATION OF INTEGERS. The spec arithmetic is over signed 64-bit words,
+ * NOT the implementation's u32/u64: every integer appearing in Algorithms 36-40
+ * at this parameter set has magnitude < 2^24 (inputs are in [0, q), q < 2^23;
+ * the largest intermediate is r - r0 < q + gamma2 < 2^24), and two's-complement
+ * [64] add/sub/mul/div/compare are EXACT integer arithmetic whenever results fit
+ * in (-2^63, 2^63). So this transcription has integer semantics — wrapping is
+ * unreachable — while staying in the bitvector theory the solver decides
+ * efficiently. Signed operators (>$, <$, /$) are used wherever a value can be
+ * negative (r0 and its derivatives); all other quantities are non-negative.
+ *
+ * Representation bridge to the crate: field elements are u32 in [0, q), with a
+ * negative centered value x represented as q + x. repQ maps spec values to that
+ * representation; u32 arguments are zero-extended into the spec domain.
+ */
+module fips204_hint44 where
+
+type W = [64]
+
+q : W
+q = 8380417
+
+tg : W        // 2 * gamma2
+tg = 190464
+
+g : W         // gamma2
+g = 95232
+
+mlen : W      // m = (q-1) / (2*gamma2)
+mlen = 44
+
+// centered residue mod 2*gamma2, for x in [0, q): result in (-gamma2, gamma2]
+modpm : W -> W
+modpm x = if r' > g then r' - tg else r'
+  where r' = x % tg
+
+// Algorithm 36 (input r+ in [0, q)); result r1 in [0, mlen), r0 centered
+decomposeZ : W -> (W, W)
+decomposeZ rp = if rp - r0 == q - 1
+                then (0, r0 - 1)
+                else ((rp - r0) / tg, r0)   // rp - r0 >= 0 here, so / is exact
+  where r0 = modpm rp
+
+// mod-q (u32) representation of a centered value in (-q, q)
+repQ : W -> [32]
+repQ x = drop`{32} (if x <$ 0 then x + q else x)
+
+ext : [32] -> W
+ext r = zext r
+
+// --- the specs against which the MIR functions are verified -----------------
+// (inputs are the crate's u32 field representations, assumed < q)
+
+decompose44_r1 : [32] -> [32]
+decompose44_r1 r = repQ ((decomposeZ (ext r)).0)
+
+decompose44_r0 : [32] -> [32]
+decompose44_r0 r = repQ ((decomposeZ (ext r)).1)
+
+highbits44 : [32] -> [32]
+highbits44 r = decompose44_r1 r
+
+makehint44 : [32] -> [32] -> Bit
+makehint44 z r = (decomposeZ ((ext r + ext z) % q)).0
+              != (decomposeZ (ext r)).0
+
+usehint44 : Bit -> [32] -> [32]
+usehint44 h r = if h then (if r0 >$ 0 then repQ ((r1 + 1) % mlen)
+                                      else repQ ((r1 - 1 + mlen) % mlen))
+                     else repQ r1
+  where (r1, r0) = decomposeZ (ext r)

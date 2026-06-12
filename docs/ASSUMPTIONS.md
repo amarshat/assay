@@ -52,10 +52,13 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     `*self = (condition != 0) ? *value : *self`. Justified by reading the asm (`tst {cond},0xff;
     csel {self},{value},{self},NE`) — `csel ...,NE` selects `value` when the `tst` cleared Z, i.e.
     when `condition != 0`. This is exactly the crate's documented `cmovnz` ("move if non-zero")
-    contract. It is the only asm primitive on the `reduce` path; the sign/verify harness additionally
-    monomorphizes `<u32 as CmovEq>::cmoveq` (`{impl#4}`, used by `ct_eq` in `decompose`), but that is
-    NOT reached by the reduce proofs and NO assumed spec exists for it — it must be added (and
-    justified against its asm) when the decompose/hint surface is verified.
+    contract. It is the only asm primitive on the `reduce` path.
+  - `<u32 as cmov::CmovEq>::cmoveq` (`cmov-0.5.4 backends::aarch64::{impl#4}`, reached via ctutils
+    `ct_eq` in `decompose`): assumed `*output = (*self == *rhs) ? input : *output`. Justified by
+    reading the asm (cseleq32: `eor t,{lhs},{rhs}; cmp t,0; csel {out},{input},{out},EQ` —
+    `csel ...,EQ` selects `input` exactly when `lhs ^ rhs == 0`; the surrounding Rust truncates the
+    u16 temp back to the u8 `*output`, and all values flowing in are u8-range). Used by the hint-layer
+    proofs (2026-06-12). The `cmovne`/u16/u64 variants are NOT overridden (not on any verified path).
   - `core::hint::black_box`: assumed identity (it is an optimizer barrier with no semantic effect).
 - **Which `reduce` instances are covered (v2.2, 2026-06-12): ALL THREE moduli the crate uses.**
   The harness's sign/verify entry points force the M = q = 8380417 (final z reduction via
@@ -156,6 +159,18 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   conditional-subtract branch (Barrett precision). **Non-vacuity checked:** mutating each modulus in
   the spec (8380416 / 190465 / 8191) makes SAW fail with a counterexample. Trust base: the two
   assumed CT-layer specs above ("v2 assumptions") plus mir-json translation soundness.
+- **RustCrypto ml-dsa scalar hint layer == FIPS 204 Algorithms 36/37/39/40: VERIFIED (2026-06-12).**
+  `saw implementations/rustcrypto-ml-dsa/proof/hint/hint.saw` exits 0 (4 proofs). Claims, each for
+  every field element (`x < q`, the crate's `Elem` domain), ML-DSA-44 monomorphizations:
+  `decompose` == Algorithm 36 Decompose, `high_bits` == Algorithm 37 HighBits, `make_hint` ==
+  Algorithm 39 MakeHint (all `z, r < q`), `use_hint` == Algorithm 40 UseHint. The Cryptol spec
+  (`fips204_hint44.cry`) is transcribed from FIPS 204 over signed 64-bit words — exact integer
+  semantics since every quantity in these algorithms has magnitude < 2^24, far below wrap — NOT from
+  the implementation, so this is spec-conformance, not impl-vs-impl. **Non-vacuity checked:** four
+  mutations (r0+1, r1+1, negated make_hint, use_hint+1) each fail with a counterexample.
+  Trust base: the three assumed CT-layer specs (black_box, cmovnz, cmoveq) + mir-json soundness.
+  NOT covered: `bit_pack`/`bit_unpack` (the literal GHSA-5x2r-hc65-25f9 site — the strictly-increasing
+  index validation) and the polynomial/vector-level wrappers; scalar layer only.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

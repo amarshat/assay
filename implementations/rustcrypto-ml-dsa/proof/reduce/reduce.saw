@@ -15,7 +15,7 @@ let black_box_spec = do {
     mir_execute_func [mir_term x];
     mir_return (mir_term x);
 };
-bb <- mir_unsafe_assume_spec m "core/729aed48::hint::black_box::_inst2efc261c2cb07b6c[0]" black_box_spec;
+bb <- mir_unsafe_assume_spec m "core::hint::black_box::_inst2efc261c2cb07b6c" black_box_spec;
 
 // ---------------------------------------------------------------------------
 // Override 2: cmov::backends::aarch64::<u32 as Cmov>::cmovnz — a constant-time
@@ -49,7 +49,7 @@ let cmovnz_u32_spec = do {
     // *self = (cond != 0) ? val : self0
     mir_points_to self_ref (mir_term {{ if cond != 0 then val else self0 }});
 };
-cm <- mir_unsafe_assume_spec m "cmov/7f670710::backends::aarch64::{impl#1}::cmovnz[0]" cmovnz_u32_spec;
+cm <- mir_unsafe_assume_spec m "cmov::backends::aarch64::{impl#1}::cmovnz" cmovnz_u32_spec;
 
 // ---------------------------------------------------------------------------
 // The claims. `BarrettReduce::reduce` is generic over the modulus M; ml-dsa
@@ -80,13 +80,13 @@ let reduce_spec modulus = do {
     mir_return (mir_term {{ x % modulus }});
 };
 
-ov_q <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst3390e630c0020d00[0]" [bb, cm] false (reduce_spec {{ 8380417 : [32] }}) z3;
+ov_q <- mir_verify m "ml_dsa::algebra::BarrettReduce::reduce::_inst3390e630c0020d00" [bb, cm] false (reduce_spec {{ 8380417 : [32] }}) z3;
 print "VERIFIED: Barrett reduce(x) == x mod q (q = 8380417, field modulus) for all u32 x";
 
-ov_g2 <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst805f6f80791ad6a1[0]" [bb, cm] false (reduce_spec {{ 190464 : [32] }}) z3;
+ov_g2 <- mir_verify m "ml_dsa::algebra::BarrettReduce::reduce::_inst805f6f80791ad6a1" [bb, cm] false (reduce_spec {{ 190464 : [32] }}) z3;
 print "VERIFIED: Barrett reduce(x) == x mod 2*gamma2 (190464, ML-DSA-44 Decompose modulus) for all u32 x";
 
-ov_2d <- mir_verify m "ml_dsa/b7ee2aad::algebra::BarrettReduce::reduce::_inst7d46f3ac9454f524[0]" [bb, cm] false (reduce_spec {{ 8192 : [32] }}) z3;
+ov_2d <- mir_verify m "ml_dsa::algebra::BarrettReduce::reduce::_inst7d46f3ac9454f524" [bb, cm] false (reduce_spec {{ 8192 : [32] }}) z3;
 print "VERIFIED: Barrett reduce(x) == x mod 2^d (8192, Power2Round modulus) for all u32 x";
 
 print "ALL THREE BarrettReduce moduli used by RustCrypto ml-dsa (MlDsa44) verified exact on the full u32 domain";

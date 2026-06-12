@@ -60,6 +60,9 @@ jobs:
       - name: Prove ct_div(x) == floor(x / 2*gamma2) for all x < Q (SAW)
         run: .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/ctdiv/ct_div.saw
 
+      - name: Prove scalar hint layer == FIPS 204 Algorithms 36/37/39/40 (SAW)
+        run: .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/hint/hint.saw
+
       - name: Check const zetas table in the artifact == FIPS 204 Appendix B
         run: |
           cd implementations/rustcrypto-ml-dsa

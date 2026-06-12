@@ -1,0 +1,116 @@
+enable_experimental;
+// Focused-audit target #3 groundwork: the scalar hint layer of RustCrypto ml-dsa
+// against FIPS 204 Algorithms 36/37/39/40 (ML-DSA-44 instances).
+//
+//   decompose  (algebra.rs, {impl#2})  == Algorithm 36 Decompose
+//   high_bits  (algebra.rs, {impl#3})  == Algorithm 37 HighBits
+//   make_hint  (hint.rs)               == Algorithm 39 MakeHint
+//   use_hint   (hint.rs)               == Algorithm 40 UseHint
+//
+// The spec (fips204_hint44.cry) is transcribed from FIPS 204 over UNBOUNDED
+// integers, so equivalence here is real spec-conformance, not impl-vs-impl.
+// decompose is also the site of RUSTSEC-2025-0144 (timing); we verify its
+// FUNCTIONAL behavior (CT properties are out of scope for this pipeline).
+import "fips204_hint44.cry";
+
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+// --- assumed CT-layer overrides (trust base, see docs/ASSUMPTIONS.md) -------
+// 1. core::hint::black_box: identity (optimizer barrier).
+let black_box_spec = do {
+    x <- mir_fresh_var "x" mir_u8;
+    mir_execute_func [mir_term x];
+    mir_return (mir_term x);
+};
+bb <- mir_unsafe_assume_spec m "core::hint::black_box::_inst2efc261c2cb07b6c" black_box_spec;
+
+// 2. <u32 as cmov::Cmov>::cmovnz (aarch64 inline asm: tst cond,0xff; csel self,value,self,NE):
+//    *self = (condition != 0) ? *value : *self
+let cmovnz_u32_spec = do {
+    self_ref <- mir_alloc_mut mir_u32;
+    self0 <- mir_fresh_var "self0" mir_u32;
+    mir_points_to self_ref (mir_term self0);
+    val_ref <- mir_alloc mir_u32;
+    val <- mir_fresh_var "val" mir_u32;
+    mir_points_to val_ref (mir_term val);
+    cond <- mir_fresh_var "cond" mir_u8;
+    mir_execute_func [self_ref, val_ref, mir_term cond];
+    mir_points_to self_ref (mir_term {{ if cond != 0 then val else self0 }});
+};
+cm <- mir_unsafe_assume_spec m "cmov::backends::aarch64::{impl#1}::cmovnz" cmovnz_u32_spec;
+
+// 3. <u32 as cmov::CmovEq>::cmoveq (aarch64 inline asm, cmov-0.5.4
+//    backends/aarch64.rs cseleq32: eor t,lhs,rhs; cmp t,0; csel out,input,out,EQ):
+//    *output = (*self == *rhs) ? input : *output
+//    Reached via ctutils CtEq (ct_eq.rs: `self.cmoveq(other, 1, &mut ret.0)`).
+//    Signature (linked MIR): fn cmoveq(_1: &u32, _2: &u32, _3: u8, _4: &mut u8)
+let cmoveq_u32_spec = do {
+    lhs_ref <- mir_alloc mir_u32;
+    lhs <- mir_fresh_var "lhs" mir_u32;
+    mir_points_to lhs_ref (mir_term lhs);
+    rhs_ref <- mir_alloc mir_u32;
+    rhs <- mir_fresh_var "rhs" mir_u32;
+    mir_points_to rhs_ref (mir_term rhs);
+    input <- mir_fresh_var "input" mir_u8;
+    out_ref <- mir_alloc_mut mir_u8;
+    out0 <- mir_fresh_var "out0" mir_u8;
+    mir_points_to out_ref (mir_term out0);
+    mir_execute_func [lhs_ref, rhs_ref, mir_term input, out_ref];
+    mir_points_to out_ref (mir_term {{ if lhs == rhs then input else out0 }});
+};
+ce <- mir_unsafe_assume_spec m "cmov::backends::aarch64::{impl#4}::cmoveq" cmoveq_u32_spec;
+
+let ct_overrides = [bb, cm, ce];
+
+// --- Elem struct plumbing ----------------------------------------------------
+let bf_adt = mir_find_adt m "ml_dsa::algebra::BaseField" [];
+let elem_adt = mir_find_adt m "module_lattice::algebra::Elem" [mir_adt bf_adt];
+let elem x = mir_struct_value elem_adt [mir_term x];
+
+// --- Algorithm 36: decompose (Elem by value -> (Elem, Elem)) ----------------
+let decompose_spec = do {
+    x <- mir_fresh_var "x" mir_u32;
+    mir_precond {{ x < `8380417 }};
+    mir_execute_func [elem x];
+    mir_return (mir_tuple_value [elem {{ decompose44_r1 x }}, elem {{ decompose44_r0 x }}]);
+};
+dec_ov <- mir_verify m "ml_dsa::algebra::{impl#2}::decompose::_inst805f6f80791ad6a1" ct_overrides false decompose_spec z3;
+print "VERIFIED: decompose == FIPS 204 Algorithm 36 (Decompose), ML-DSA-44, for all field elements";
+
+// --- Algorithm 37: high_bits (&Elem -> Elem) ---------------------------------
+let high_bits_spec = do {
+    r_ref <- mir_alloc (mir_adt elem_adt);
+    x <- mir_fresh_var "x" mir_u32;
+    mir_points_to r_ref (elem x);
+    mir_precond {{ x < `8380417 }};
+    mir_execute_func [r_ref];
+    mir_return (elem {{ highbits44 x }});
+};
+hb_ov <- mir_verify m "ml_dsa::algebra::{impl#3}::high_bits::_inst805f6f80791ad6a1" ct_overrides false high_bits_spec z3;
+print "VERIFIED: high_bits == FIPS 204 Algorithm 37 (HighBits), ML-DSA-44, for all field elements";
+
+// --- Algorithm 39: make_hint (Elem, Elem -> bool) ----------------------------
+// (compositional: uses the proven decompose/high_bits as overrides too)
+let make_hint_spec = do {
+    z <- mir_fresh_var "z" mir_u32;
+    r <- mir_fresh_var "r" mir_u32;
+    mir_precond {{ z < `8380417 }};
+    mir_precond {{ r < `8380417 }};
+    mir_execute_func [elem z, elem r];
+    mir_return (mir_term {{ makehint44 z r }});
+};
+mh_ov <- mir_verify m "ml_dsa::hint::make_hint::_inst805f6f80791ad6a1" (concat ct_overrides [dec_ov, hb_ov]) false make_hint_spec z3;
+print "VERIFIED: make_hint == FIPS 204 Algorithm 39 (MakeHint), ML-DSA-44, for all field elements";
+
+// --- Algorithm 40: use_hint (bool, Elem -> Elem) -----------------------------
+let use_hint_spec = do {
+    h <- mir_fresh_var "h" mir_bool;
+    r <- mir_fresh_var "r" mir_u32;
+    mir_precond {{ r < `8380417 }};
+    mir_execute_func [mir_term h, elem r];
+    mir_return (elem {{ usehint44 h r }});
+};
+uh_ov <- mir_verify m "ml_dsa::hint::use_hint::_inst805f6f80791ad6a1" (concat ct_overrides [dec_ov, hb_ov]) false use_hint_spec z3;
+print "VERIFIED: use_hint == FIPS 204 Algorithm 40 (UseHint), ML-DSA-44, for all field elements";
+
+print "SCALAR HINT LAYER CONFORMS: decompose/high_bits/make_hint/use_hint == FIPS 204 Algorithms 36/37/39/40 (ML-DSA-44)";

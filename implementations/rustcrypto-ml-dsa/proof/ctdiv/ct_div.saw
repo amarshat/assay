@@ -21,5 +21,5 @@ let ct_div_spec = do {
     mir_return (mir_term {{ x / 190464 }});
 };
 
-dv <- mir_verify m "ml_dsa/b7ee2aad::algebra::ConstantTimeDiv::ct_div::_inst805f6f80791ad6a1[0]" [] false ct_div_spec z3;
+dv <- mir_verify m "ml_dsa::algebra::ConstantTimeDiv::ct_div::_inst805f6f80791ad6a1" [] false ct_div_spec z3;
 print "VERIFIED: ct_div(x) == floor(x / 190464) (2*gamma2, ML-DSA-44) for all x < Q -- the documented contract holds";

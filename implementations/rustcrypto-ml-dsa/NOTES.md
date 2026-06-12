@@ -155,8 +155,8 @@ cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir
   a non-vacuity guard (mutated moduli must FAIL). Do NOT treat it as a gate (branch protection) until
   it has proven reproducible on a clean runner — the first cache-miss run builds mir-json + translates
   stdlibs and will be slow (~tens of minutes).
-- **(d) The focused audit:** #1 and #2 DONE 2026-06-12 (below), #3 hint encode/decode/use
-  conformance (the GHSA-class target) remains.
+- **(d) The focused audit:** #1, #2, and the scalar half of #3 DONE 2026-06-12 (below); remaining:
+  `bit_pack`/`bit_unpack` (the literal GHSA site) + polynomial/vector hint wrappers.
 
 ## Focused audit results (2026-06-12): smells #1 and #2 — both CLEAN, no findings
 - **#1 ct_div Barrett precision: VERIFIED.** `proof/ctdiv/ct_div.saw` (saw exits 0):
@@ -176,3 +176,25 @@ cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir
   pre-decrements from m=256 → 255..=1). Checker is self-tested: a corrupted table makes it exit 1.
   Note this checks the COMPILED artifact (post-const-eval), which is strictly stronger than auditing
   the const-fn source.
+- **#3 (scalar half) hint layer == FIPS 204: VERIFIED.** `proof/hint/hint.saw` (saw exits 0, 4
+  proofs): `decompose` == Alg 36, `high_bits` == Alg 37, `make_hint` == Alg 39, `use_hint` == Alg 40,
+  for ALL field elements (ML-DSA-44 instances). Spec `fips204_hint44.cry` transcribed from FIPS 204
+  over signed [64] (exact integer semantics: every quantity < 2^24 in magnitude — first attempt used
+  Cryptol Integer and z3 ground to a halt on the mixed int/bv goals; same-width signed BV is the
+  tractable faithful encoding). Plumbing learned: `mir_find_adt` for `module_lattice::Elem<BaseField>`
+  + `mir_struct_value`/`mir_tuple_value` for the (Elem, Elem) return; make_hint/use_hint verified
+  compositionally with the proven decompose/high_bits as overrides. NEW assumed CT spec needed:
+  `<u32 as CmovEq>::cmoveq` (via ctutils ct_eq in decompose) — justified against its asm in
+  ASSUMPTIONS.md; trust base is now exactly {black_box, cmovnz u32, cmoveq u32}. Non-vacuity: 4
+  mutations (r0+1, r1+1, ~make_hint, use_hint+1) all yield counterexamples.
+  Still open for #3: `bit_pack`/`bit_unpack` — the GHSA-5x2r-hc65-25f9 strictly-increasing-index
+  validation lives in bit_unpack, array-level with data-dependent loops (omega=80, K=4 for MlDsa44).
+
+## PORTABILITY: SAW names must NOT carry crate disambiguators (CI lesson, 2026-06-12)
+The first clean-runner CI run failed on `Couldn't find MIR function named:
+cmov/7f670710::backends::...` — the crate disambiguator hashes (`cmov/7f670710`, `ml_dsa/b7ee2aad`,
+...) are rustc metadata hashes that DIFFER between machines. SAW resolves disambiguator-free names
+fine (`cmov::backends::aarch64::{impl#1}::cmovnz`, `ml_dsa::algebra::BarrettReduce::reduce::_inst...`,
+no `[0]` suffix needed). All proof scripts now use the portable form. The `_inst` monomorphization
+hashes are kept — whether THEY are machine-stable is confirmed by the rust.yml run on a clean runner
+(if one ever changes, regenerate from the MIR: python3 scan of fns by name/MULTIPLIER constant).

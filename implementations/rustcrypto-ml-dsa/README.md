@@ -72,7 +72,11 @@ generics/traits can be awkward for MIR.
   2. const-computed zetas (`ntt.rs`) — **DONE 2026-06-12, CLEAN.** All 16 copies of the table baked
      into the compiled artifact match `zeta^bitrev8(i) mod q` (FIPS 204 Appendix B) on all 255 live
      entries; index 0 is a never-read dummy (`proof/zetas/check_zetas.py`, in CI). No finding.
-  3. hint encode/decode conformance (`hint.rs`/`verifying.rs`) — the GHSA-class spec target. **Next.**
+  3. hint conformance (`hint.rs`) — **scalar layer DONE 2026-06-12, CLEAN.** SAW-verified against
+     FIPS 204: `decompose` ≡ Algorithm 36, `high_bits` ≡ Algorithm 37, `make_hint` ≡ Algorithm 39,
+     `use_hint` ≡ Algorithm 40, for **all** field elements (ML-DSA-44; `proof/hint/`, spec transcribed
+     from the standard, four mutations all rejected). No finding. **Remaining:** `bit_pack`/
+     `bit_unpack` — the literal GHSA-5x2r-hc65-25f9 site (strictly-increasing hint-index validation).
 
 ## Open findings
 _(none yet — this section is the private ledger; do not open public issues from here)_

@@ -149,12 +149,15 @@ cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir
 ## TODO — remaining plan
 - **(a) Commit v2.1 milestone.** DONE (5b9eb74).
 - **(b) v2.2 mod-q reduce.** DONE (this section).
-- **(c) `rust.yml` CI: WIRED (2026-06-12), pending first green run on a clean runner.** Mirrors
-  `saw.yml` on macos-15 arm64: setup.sh (SAW) + setup_rust.sh (skipped when the mir-json/nightly/rlibs
-  caches hit), builds the harness MIR repo-locally, refreshes the symlink, runs `saw reduce.saw`, and
-  a non-vacuity guard (mutated moduli must FAIL). Do NOT treat it as a gate (branch protection) until
-  it has proven reproducible on a clean runner — the first cache-miss run builds mir-json + translates
-  stdlibs and will be slow (~tens of minutes).
+- **(c) `rust.yml` CI: GREEN on a clean runner (run 27420818098, 2026-06-12).** Mirrors `saw.yml` on
+  macos-15 arm64: setup.sh (SAW) + setup_rust.sh (skipped when the mir-json/nightly/rlibs caches hit),
+  builds the harness MIR repo-locally, refreshes the symlink, runs reduce.saw + ct_div.saw + hint.saw
+  + check_zetas.py + the mutated-moduli non-vacuity guard. The green run rebuilt the full toolchain
+  from scratch (~25 min; caches only save on job SUCCESS, so the two earlier failed runs cached
+  nothing) and confirms the disambiguator-free names AND the `_inst` monomorphization hashes are
+  machine-stable. Earlier failures, for the record: (1) z3 not on PATH (saw shells out to it; fixed
+  with GITHUB_PATH), (2) machine-dependent crate disambiguators in SAW names (fixed, see PORTABILITY
+  note).
 - **(d) The focused audit:** #1, #2, and the scalar half of #3 DONE 2026-06-12 (below); remaining:
   `bit_pack`/`bit_unpack` (the literal GHSA site) + polynomial/vector hint wrappers.
 

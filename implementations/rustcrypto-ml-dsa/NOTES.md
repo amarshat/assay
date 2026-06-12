@@ -155,6 +155,24 @@ cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir
   a non-vacuity guard (mutated moduli must FAIL). Do NOT treat it as a gate (branch protection) until
   it has proven reproducible on a clean runner — the first cache-miss run builds mir-json + translates
   stdlibs and will be slow (~tens of minutes).
-- **(d) The focused audit (next verification work):** smells #1 ct_div precision (claim:
-  `ct_div(x) == x / M` for all x < Q, for each divisor used), #2 zetas table vs FIPS 204 Appendix B,
-  #3 hint encode/decode/use conformance (the GHSA-class target).
+- **(d) The focused audit:** #1 and #2 DONE 2026-06-12 (below), #3 hint encode/decode/use
+  conformance (the GHSA-class target) remains.
+
+## Focused audit results (2026-06-12): smells #1 and #2 — both CLEAN, no findings
+- **#1 ct_div Barrett precision: VERIFIED.** `proof/ctdiv/ct_div.saw` (saw exits 0):
+  `ct_div(x) == floor(x / 190464)` (the only monomorphized divisor, TwoGamma2 for MlDsa44; same
+  `_inst805f6f80791ad6a1` generic hash as the 2*gamma2 reduce) for **all x < Q = 8380417** — exactly
+  the documented contract. No overrides needed (straight-line u64 mul/shift). Non-vacuity: divisor
+  mutated to 190465 fails. The documented `x < Q` precondition is genuinely load-bearing: dropping it
+  yields a counterexample at x = 4144496639 (ct_div returns 21760, true floor 21759 — the ceiling
+  multiplier `div_ceil(2^48, M)` over-estimates); first failure of form kM-1 is at x = 2369753087,
+  ~283x above Q, confirmed by direct computation. Callers (decompose, diff < q) stay in-contract.
+- **#2 const zetas table: VERIFIED (artifact-level).** `proof/zetas/check_zetas.py` (exit 0, wired
+  into rust.yml): all 16 embedded copies of `ZETA_POW_BITREV` in the linked MIR (one per
+  ntt_layer/ntt_inverse_layer monomorphization — rustc const-eval bakes the table into each) are
+  identical, and all 255 live entries equal `zeta^bitrev8(i) mod q` (zeta=1753, the definition FIPS
+  204 Appendix B tabulates). Entry 0 is a deliberate never-read dummy: both directions perform
+  exactly 255 = 1+2+...+128 reads (forward pre-increments from m=0 → indices 1..=255; inverse
+  pre-decrements from m=256 → 255..=1). Checker is self-tested: a corrupted table makes it exit 1.
+  Note this checks the COMPILED artifact (post-const-eval), which is strictly stronger than auditing
+  the const-fn source.

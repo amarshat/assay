@@ -63,12 +63,16 @@ generics/traits can be awkward for MIR.
   base unchanged (same two CT-layer assumed specs). The MIR build is now repo-local (`build/`,
   gitignored) behind a stable symlink, so rebuilds/reboots no longer break the proof script. Scope:
   ML-DSA-65/87's 2·γ₂ = 523776 is a different monomorphization, not in this MIR, not claimed.
-- **Next: a FOCUSED audit of the bug-prone surface** (not the whole crate). Three targets,
-  chosen because they are exactly where defects have historically appeared:
-  1. `ct_div` Barrett precision (`algebra.rs`) — does it return `floor(x/M)` for all `x < Q`?
-  2. const-computed zetas (`ntt.rs`) — do all 256 entries match FIPS 204 Appendix B?
-  3. hint encode/decode conformance (`hint.rs`/`verifying.rs`) — the GHSA-class spec target.
-  Bounded (weeks), maximizes finding odds, shareable either way (a tight audit note, or a finding).
+- **Focused audit of the bug-prone surface** (not the whole crate). Three targets, chosen because
+  they are exactly where defects have historically appeared:
+  1. `ct_div` Barrett precision (`algebra.rs`) — **DONE 2026-06-12, CLEAN.** SAW-verified
+     `ct_div(x) == floor(x/190464)` for all `x < Q` (the documented contract; `proof/ctdiv/`).
+     The `x < Q` precondition is load-bearing — precision genuinely breaks ~283× above Q — but all
+     callers stay in-contract. No finding.
+  2. const-computed zetas (`ntt.rs`) — **DONE 2026-06-12, CLEAN.** All 16 copies of the table baked
+     into the compiled artifact match `zeta^bitrev8(i) mod q` (FIPS 204 Appendix B) on all 255 live
+     entries; index 0 is a never-read dummy (`proof/zetas/check_zetas.py`, in CI). No finding.
+  3. hint encode/decode conformance (`hint.rs`/`verifying.rs`) — the GHSA-class spec target. **Next.**
 
 ## Open findings
 _(none yet — this section is the private ledger; do not open public issues from here)_

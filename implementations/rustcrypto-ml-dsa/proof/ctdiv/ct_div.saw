@@ -1,0 +1,25 @@
+enable_experimental;
+// Focused-audit target #1 (NOTES.md smell #1): ConstantTimeDiv::ct_div Barrett precision.
+//
+// Source (ml-dsa 0.1.1 algebra.rs): ct_div(x) = ((x as u64 * CT_DIV_MULTIPLIER) >> 48) as u32,
+// with CT_DIV_MULTIPLIER = ceil(2^48 / M) (div_ceil — a CEILING Barrett multiplier, which can
+// OVER-estimate the quotient, the classic precision failure mode). Documented contract:
+// "Perform constant-time division of x by Self::U32 / Requires: x < Q (the field modulus, ~2^23)".
+//
+// The only monomorphization in the MlDsa44 harness MIR is M = TwoGamma2 = 190464
+// (_inst805f6f80791ad6a1, the same generic-arg hash as the 2*gamma2 BarrettReduce instance),
+// called from decompose: TwoGamma2::ct_div(diff.0) with diff < q. We verify the documented
+// contract exactly: ct_div(x) == floor(x / 190464) for ALL x < Q = 8380417.
+//
+// No overrides needed: ct_div is straight-line u64 multiply/shift/truncate (no cmov, no black_box).
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+let ct_div_spec = do {
+    x <- mir_fresh_var "x" mir_u32;
+    mir_precond {{ x < 8380417 }};
+    mir_execute_func [mir_term x];
+    mir_return (mir_term {{ x / 190464 }});
+};
+
+dv <- mir_verify m "ml_dsa/b7ee2aad::algebra::ConstantTimeDiv::ct_div::_inst805f6f80791ad6a1[0]" [] false ct_div_spec z3;
+print "VERIFIED: ct_div(x) == floor(x / 190464) (2*gamma2, ML-DSA-44) for all x < Q -- the documented contract holds";

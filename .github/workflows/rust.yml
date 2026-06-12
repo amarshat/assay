@@ -54,6 +54,14 @@ jobs:
       - name: Prove Barrett reduce == x mod M for q, 2*gamma2, 2^d (SAW)
         run: .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw
 
+      - name: Prove ct_div(x) == floor(x / 2*gamma2) for all x < Q (SAW)
+        run: .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/ctdiv/ct_div.saw
+
+      - name: Check const zetas table in the artifact == FIPS 204 Appendix B
+        run: |
+          cd implementations/rustcrypto-ml-dsa
+          python3 proof/zetas/check_zetas.py build/mldsa_harness.linked-mir.json
+
       - name: Non-vacuity guard (SAW must reject mutated moduli)
         run: |
           sed -e 's/{{ 8380417 : \[32\] }}/{{ 8380416 : [32] }}/' \

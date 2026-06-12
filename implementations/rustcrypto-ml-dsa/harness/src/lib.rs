@@ -19,3 +19,10 @@ pub fn sign44(sk: &SigningKey<MlDsa44>, msg: &[u8]) -> Signature<MlDsa44> {
 pub fn verify44(vk: &VerifyingKey<MlDsa44>, msg: &[u8], sig: &Signature<MlDsa44>) -> bool {
     vk.verify(msg, sig).is_ok()
 }
+
+// Forces the byte encode/decode layer (encode.rs + hint.rs bit_pack/bit_unpack —
+// the latter is the GHSA-5x2r-hc65-25f9 hint-index-validation site).
+pub fn sig_roundtrip44(sig: &Signature<MlDsa44>) -> Option<Signature<MlDsa44>> {
+    let enc = sig.encode();
+    Signature::<MlDsa44>::decode(&enc)
+}

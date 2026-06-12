@@ -47,7 +47,13 @@ generics/traits can be awkward for MIR.
   bundles). Note: SAW 1.5.1 wants schema **v8**, not the v11 of mir-json HEAD — the smoke test caught
   this.
 - Target pinned and vendored: `ml-dsa 0.1.1` + `module-lattice 0.2.3` (see `target/`).
-- **Next (v2.1): a FOCUSED audit of the bug-prone surface** (not the whole crate). Three targets,
+- **v2.1 first real verify: DONE (2026-06-12).** `proof/reduce/reduce.saw` closes (`saw` exits 0):
+  the crate's Barrett `reduce` ≡ `x mod 8192` (the 2^d / Power2Round modulus, the instance the keygen
+  harness reaches) for **all** `u32`. This clears the cmov inline-asm blocker via two sound
+  `mir_unsafe_assume_spec` overrides for the CT layer (`<u32 as Cmov>::cmovnz` + `black_box`); see
+  `NOTES.md` and `docs/ASSUMPTIONS.md`. Non-vacuity checked (a mutated spec fails). This is the first
+  tool-verified statement about the real RustCrypto crate's arithmetic.
+- **Next (v2.1/2.2): a FOCUSED audit of the bug-prone surface** (not the whole crate). Three targets,
   chosen because they are exactly where defects have historically appeared:
   1. `ct_div` Barrett precision (`algebra.rs`) — does it return `floor(x/M)` for all `x < Q`?
   2. const-computed zetas (`ntt.rs`) — do all 256 entries match FIPS 204 Appendix B?

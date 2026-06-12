@@ -41,6 +41,29 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
     argument noted there — the `-fwrapv` proof itself asserts no overflow bound.
 - Anything not listed as proven is, explicitly, NOT proven.
 
+## v2 (Rust / RustCrypto `ml-dsa`) assumptions
+- **Assumed specs for the constant-time primitive layer (inline asm SAW cannot read).** The crate's
+  arithmetic bottoms out in CT primitives that SAW (MIR/LLVM) cannot translate, so the v2.1 proof
+  (`implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw`) replaces them with `mir_unsafe_assume_spec`
+  *assumed* specs. These are sound iff each spec reproduces the primitive's true input/output relation;
+  they are NOT verified against the asm (SAW cannot see it). This is the standard SAW handling of
+  inline-asm/intrinsic leaves, but it IS part of the trust base:
+  - `<u32 as cmov::Cmov>::cmovnz` (`cmov-0.5.4 backends::aarch64::{impl#1}`): assumed
+    `*self = (condition != 0) ? *value : *self`. Justified by reading the asm (`tst {cond},0xff;
+    csel {self},{value},{self},NE`) — `csel ...,NE` selects `value` when the `tst` cleared Z, i.e.
+    when `condition != 0`. This is exactly the crate's documented `cmovnz` ("move if non-zero")
+    contract. It is the ONLY cmov instance reachable from the keygen harness (`cmovz`, `CmovEq`, and
+    the u16/u64 widths are not monomorphized on this surface).
+  - `core::hint::black_box`: assumed identity (it is an optimizer barrier with no semantic effect).
+- **Which `reduce` instance is covered.** Only the M = 2^d = 8192 (Power2Round) monomorphization is
+  reached by `SigningKey::<MlDsa44>::from_seed`; the mod-q and 2*gamma2 instances are out of scope
+  until a harness exercises the NTT-multiply / sign / verify paths (v2.2). For the power-of-two
+  modulus the Barrett shift is exact, so the result holds for all `u32` with no input precondition —
+  unlike the q / 2*gamma2 cases, which will carry an `x < M^2` precondition and a live
+  conditional-subtract branch (the actually bug-prone Barrett case).
+- **Pinned, vendored target.** `ml-dsa 0.1.1` + `module-lattice 0.2.3` (provenance in
+  `implementations/rustcrypto-ml-dsa/target/`). mir-json schema v8 = the commit SAW 1.5.1 bundles.
+
 ## Modeling choices for `montgomery_reduce` (model/cryptol/MLDSA_NTT.cry)
 - Modeled at the **exact C bit widths** (`[64] -> [32]`), not over idealized `Integer`, because SAW
   checks bit-for-bit equivalence and the algorithm depends on two's-complement truncation/shift.

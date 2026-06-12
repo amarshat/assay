@@ -30,7 +30,10 @@ jobs:
           key: mirjson-${{ runner.os }}-${{ hashFiles('scripts/setup_rust.sh') }}
 
       - name: Set up SAW (Isabelle skipped)
-        run: SKIP_ISABELLE=1 ./scripts/setup.sh
+        run: |
+          SKIP_ISABELLE=1 ./scripts/setup.sh
+          # saw shells out to z3 (and friends) from the bundled solver set in .tools/bin
+          echo "$PWD/.tools/bin" >> "$GITHUB_PATH"
 
       - name: Set up SAW-Rust toolchain (pinned nightly + mir-json, skipped when cached)
         run: |

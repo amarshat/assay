@@ -214,3 +214,16 @@ fine (`cmov::backends::aarch64::{impl#1}::cmovnz`, `ml_dsa::algebra::BarrettRedu
 no `[0]` suffix needed). All proof scripts now use the portable form. The `_inst` monomorphization
 hashes are kept — whether THEY are machine-stable is confirmed by the rust.yml run on a clean runner
 (if one ever changes, regenerate from the MIR: python3 scan of fns by name/MULTIPLIER constant).
+
+## Scalar algebra completeness (2026-06-12): Power2Round / infinity norm / mod± q — VERIFIED
+`proof/scalar/scalar.saw` (saw exit 0, 3 proofs, 4 mutations all rejected): `power2round` == FIPS 204
+Algorithm 35, `infinity_norm` == |· mod± q| (Section 2.3 — gates the z/ct0 norm checks), and
+`mod_plus_minus::<SpecQ>` == r mod± q in mod-q representation (composition is the identity on [0,q);
+proving the impl matches it confirms it computes the FIPS quantity). All three are parameter-set
+independent (q, d fixed across 44/65/87). Same no-wrap argument as decompose for power2round's
+Elem subtraction: max r − r0 = q − 1, no mod-q wrap. With this, EVERY scalar Elem-level function in
+algebra.rs/hint.rs is FIPS-conformance-verified: reduce (3 moduli), ct_div, decompose, high_bits,
+make_hint, use_hint, power2round, infinity_norm, mod_plus_minus (3 instances — 2γ₂ and 2^d inside
+decompose/power2round compositionally, SpecQ directly). Next campaign: ntt_layer/ntt_inverse_layer
+vs FIPS Alg 41/42 — these take plain `&mut [Elem; 256]` (NOT hybrid-array), so they dodge the
+crucible slice blocker.

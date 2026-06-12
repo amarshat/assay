@@ -1,0 +1,64 @@
+/* FIPS 204 scalar algebra: Algorithm 35 Power2Round, the infinity norm
+ * (Section 2.3), and the centered residue mod q — transcribed directly from
+ * the standard:
+ *
+ *   Algorithm 35 Power2Round(r), d = 13:
+ *       r+ = r mod q;  r0 = r+ mod+- 2^d;  return ((r+ - r0) / 2^d, r0)
+ *   Section 2.3 infinity norm: for w in Z_q, |w|_inf = |w mod+- q|
+ *   mod+- a (Section 2.3): the unique r0 with -ceil(a/2) < r0 <= floor(a/2)
+ *       and r0 == r (mod a)
+ *
+ * These are PARAMETER-SET INDEPENDENT (q = 8380417 and d = 13 are fixed for
+ * all of ML-DSA-44/65/87).
+ *
+ * Same encoding discipline as fips204_hint44.cry: arithmetic over signed [64]
+ * words, which is exact integer arithmetic here since every quantity has
+ * magnitude < 2^24. Signed operators where values can be negative. The crate
+ * represents a centered value x < 0 as the field element q + x (see the
+ * Power2Round comment in algebra.rs); repQ is that bridge.
+ */
+module fips204_scalar44 where
+
+type W = [64]
+
+q : W
+q = 8380417
+
+d2 : W        // 2^d, d = 13
+d2 = 8192
+
+// centered residue mod 2^d, for x in [0, q): result in (-2^12, 2^12]
+modpm2d : W -> W
+modpm2d x = if r' > 4096 then r' - d2 else r'
+  where r' = x % d2
+
+// centered residue mod q, for x in [0, q): result in [-(q-1)/2, (q-1)/2]
+modpmq : W -> W
+modpmq x = if x > 4190208 then x - q else x   // floor(q/2) = 4190208
+
+// mod-q (u32) representation of a centered value in (-q, q)
+repQ : W -> [32]
+repQ x = drop`{32} (if x <$ 0 then x + q else x)
+
+ext : [32] -> W
+ext r = zext r
+
+// --- the specs (inputs are u32 field representations, assumed < q) -----------
+
+// Algorithm 35: r1 in [0, 1023], r0 centered (crate returns both as Elem)
+power2round44_r1 : [32] -> [32]
+power2round44_r1 r = drop`{32} ((ext r - modpm2d (ext r)) / d2)  // numerator in [0, q-1]
+
+power2round44_r0 : [32] -> [32]
+power2round44_r0 r = repQ (modpm2d (ext r))
+
+// Section 2.3: |r mod+- q|, as a plain u32 magnitude
+infnorm44 : [32] -> [32]
+infnorm44 r = drop`{32} (if c <$ 0 then negate c else c)
+  where c = modpmq (ext r)
+
+// r mod+- q in the crate's mod-q representation (the identity on [0, q) --
+// centering and re-representing cancel; proving the implementation matches
+// this composition confirms it computes the FIPS quantity, not something else)
+modpmq44 : [32] -> [32]
+modpmq44 r = repQ (modpmq (ext r))

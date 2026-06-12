@@ -171,6 +171,14 @@ A proof is only meaningful relative to what it assumes. This file is the honest 
   Trust base: the three assumed CT-layer specs (black_box, cmovnz, cmoveq) + mir-json soundness.
   NOT covered: `bit_pack`/`bit_unpack` (the literal GHSA-5x2r-hc65-25f9 site — the strictly-increasing
   index validation) and the polynomial/vector-level wrappers; scalar layer only.
+- **RustCrypto ml-dsa scalar algebra (Power2Round / infinity norm / mod+- q): VERIFIED (2026-06-12).**
+  `saw implementations/rustcrypto-ml-dsa/proof/scalar/scalar.saw` exits 0 (3 proofs), each for every
+  field element (`x < q`): `power2round` == FIPS 204 Algorithm 35, `infinity_norm` == `|. mod+- q|`
+  (Section 2.3 — this gates the security-critical z/ct0 norm checks), and `mod_plus_minus::<SpecQ>`
+  == `r mod+- q` in the crate's mod-q representation. All three claims are parameter-set independent
+  (q and d = 13 are fixed across ML-DSA-44/65/87). Spec `fips204_scalar44.cry`, same signed-[64]
+  exact-integer transcription discipline. **Non-vacuity:** four mutations (r1+1, r0+1, norm+1,
+  modpm+1) each fail with a counterexample. Trust base: the three assumed CT specs + mir-json.
 
 ## Tool/version pins
 Pinned and installed by `scripts/setup.sh` into `.tools/` (gitignored). Platform of record:

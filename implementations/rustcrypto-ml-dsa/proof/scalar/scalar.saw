@@ -1,0 +1,96 @@
+enable_experimental;
+// Scalar algebra completeness: the remaining Elem-level functions against
+// FIPS 204 (ML-DSA-44 harness MIR; all three claims are parameter-set
+// independent — q and d are fixed across ML-DSA-44/65/87):
+//
+//   power2round    (algebra.rs, {impl#3}) == Algorithm 35 Power2Round
+//   infinity_norm  (algebra.rs, {impl#3}) == |. mod+- q|  (Section 2.3)
+//   mod_plus_minus::<SpecQ> ({impl#3})    == r mod+- q in mod-q representation
+//
+// infinity_norm gates the security-critical norm checks (z, ct0, hint weight)
+// in signing/verifying. Spec transcription notes in fips204_scalar44.cry.
+import "fips204_scalar44.cry";
+
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+// --- assumed CT-layer overrides (trust base, see docs/ASSUMPTIONS.md) -------
+let black_box_spec = do {
+    x <- mir_fresh_var "x" mir_u8;
+    mir_execute_func [mir_term x];
+    mir_return (mir_term x);
+};
+bb <- mir_unsafe_assume_spec m "core::hint::black_box::_inst2efc261c2cb07b6c" black_box_spec;
+
+let cmovnz_u32_spec = do {
+    self_ref <- mir_alloc_mut mir_u32;
+    self0 <- mir_fresh_var "self0" mir_u32;
+    mir_points_to self_ref (mir_term self0);
+    val_ref <- mir_alloc mir_u32;
+    val <- mir_fresh_var "val" mir_u32;
+    mir_points_to val_ref (mir_term val);
+    cond <- mir_fresh_var "cond" mir_u8;
+    mir_execute_func [self_ref, val_ref, mir_term cond];
+    mir_points_to self_ref (mir_term {{ if cond != 0 then val else self0 }});
+};
+cm <- mir_unsafe_assume_spec m "cmov::backends::aarch64::{impl#1}::cmovnz" cmovnz_u32_spec;
+
+let cmoveq_u32_spec = do {
+    lhs_ref <- mir_alloc mir_u32;
+    lhs <- mir_fresh_var "lhs" mir_u32;
+    mir_points_to lhs_ref (mir_term lhs);
+    rhs_ref <- mir_alloc mir_u32;
+    rhs <- mir_fresh_var "rhs" mir_u32;
+    mir_points_to rhs_ref (mir_term rhs);
+    input <- mir_fresh_var "input" mir_u8;
+    out_ref <- mir_alloc_mut mir_u8;
+    out0 <- mir_fresh_var "out0" mir_u8;
+    mir_points_to out_ref (mir_term out0);
+    mir_execute_func [lhs_ref, rhs_ref, mir_term input, out_ref];
+    mir_points_to out_ref (mir_term {{ if lhs == rhs then input else out0 }});
+};
+ce <- mir_unsafe_assume_spec m "cmov::backends::aarch64::{impl#4}::cmoveq" cmoveq_u32_spec;
+
+let ct_overrides = [bb, cm, ce];
+
+// --- Elem struct plumbing ----------------------------------------------------
+let bf_adt = mir_find_adt m "ml_dsa::algebra::BaseField" [];
+let elem_adt = mir_find_adt m "module_lattice::algebra::Elem" [mir_adt bf_adt];
+let elem x = mir_struct_value elem_adt [mir_term x];
+
+// --- Algorithm 35: power2round (&Elem -> (Elem, Elem)) -----------------------
+let power2round_spec = do {
+    r_ref <- mir_alloc (mir_adt elem_adt);
+    x <- mir_fresh_var "x" mir_u32;
+    mir_points_to r_ref (elem x);
+    mir_precond {{ x < `8380417 }};
+    mir_execute_func [r_ref];
+    mir_return (mir_tuple_value [elem {{ power2round44_r1 x }}, elem {{ power2round44_r0 x }}]);
+};
+p2r_ov <- mir_verify m "ml_dsa::algebra::{impl#3}::power2round" ct_overrides false power2round_spec z3;
+print "VERIFIED: power2round == FIPS 204 Algorithm 35 (Power2Round) for all field elements";
+
+// --- Section 2.3: infinity_norm (&Elem -> u32) --------------------------------
+let infinity_norm_spec = do {
+    r_ref <- mir_alloc (mir_adt elem_adt);
+    x <- mir_fresh_var "x" mir_u32;
+    mir_points_to r_ref (elem x);
+    mir_precond {{ x < `8380417 }};
+    mir_execute_func [r_ref];
+    mir_return (mir_term {{ infnorm44 x }});
+};
+in_ov <- mir_verify m "ml_dsa::algebra::{impl#3}::infinity_norm" ct_overrides false infinity_norm_spec z3;
+print "VERIFIED: infinity_norm == |. mod+- q| (FIPS 204 Section 2.3) for all field elements";
+
+// --- mod_plus_minus::<SpecQ> (&Elem -> Elem) ----------------------------------
+let modpmq_spec = do {
+    r_ref <- mir_alloc (mir_adt elem_adt);
+    x <- mir_fresh_var "x" mir_u32;
+    mir_points_to r_ref (elem x);
+    mir_precond {{ x < `8380417 }};
+    mir_execute_func [r_ref];
+    mir_return (elem {{ modpmq44 x }});
+};
+mpm_ov <- mir_verify m "ml_dsa::algebra::{impl#3}::mod_plus_minus::_inst3390e630c0020d00" ct_overrides false modpmq_spec z3;
+print "VERIFIED: mod_plus_minus::<SpecQ> == r mod+- q in mod-q representation, for all field elements";
+
+print "SCALAR ALGEBRA COMPLETE: power2round/infinity_norm/mod_plus_minus(q) == FIPS 204 Alg 35 / Sec 2.3";

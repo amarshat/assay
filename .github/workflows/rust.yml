@@ -1,0 +1,67 @@
+name: rust
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# The SAW-Rust leg: RustCrypto ml-dsa Barrett reduce == x mod M (all three moduli) via mir-json.
+# Mirrors saw.yml (the C leg). First runs on a clean runner validate reproducibility of the
+# pinned nightly + mir-json @7e12cece (schema v8) toolchain (scripts/setup_rust.sh).
+jobs:
+  saw-rust:
+    runs-on: macos-15   # Apple Silicon: matches the arm64 SAW binary and the aarch64-apple-darwin MIR target
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchain (.tools — SAW + mir-json checkout + translated rlibs)
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-rust-${{ runner.os }}-${{ hashFiles('scripts/setup.sh', 'scripts/setup_rust.sh') }}
+          restore-keys: |
+            tools-saw1.5.1-${{ runner.os }}-
+
+      - name: Cache Rust toolchain (pinned nightly + mir-json binaries)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.rustup/toolchains/nightly-2025-09-14-aarch64-apple-darwin
+          key: mirjson-${{ runner.os }}-${{ hashFiles('scripts/setup_rust.sh') }}
+
+      - name: Set up SAW (Isabelle skipped)
+        run: SKIP_ISABELLE=1 ./scripts/setup.sh
+
+      - name: Set up SAW-Rust toolchain (pinned nightly + mir-json, skipped when cached)
+        run: |
+          if [ -x "$HOME/.cargo/bin/mir-json" ] \
+             && [ -d "$HOME/.rustup/toolchains/nightly-2025-09-14-aarch64-apple-darwin" ] \
+             && [ -e .tools/rlibs/libcore.mir ]; then
+            echo "mir-json toolchain restored from cache; skipping setup_rust.sh"
+          else
+            ./scripts/setup_rust.sh
+          fi
+
+      - name: Build harness MIR (repo-local) and refresh the stable symlink
+        run: |
+          export SAW_RUST_LIBRARY_PATH="$PWD/.tools/rlibs"
+          cd implementations/rustcrypto-ml-dsa/harness
+          CARGO_TARGET_DIR="$PWD/../build" cargo +nightly-2025-09-14 saw-build
+          cd ../build
+          ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir.json mldsa_harness.linked-mir.json
+          ls -l mldsa_harness.linked-mir.json
+
+      - name: Prove Barrett reduce == x mod M for q, 2*gamma2, 2^d (SAW)
+        run: .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw
+
+      - name: Non-vacuity guard (SAW must reject mutated moduli)
+        run: |
+          sed -e 's/{{ 8380417 : \[32\] }}/{{ 8380416 : [32] }}/' \
+              -e 's/{{ 190464 : \[32\] }}/{{ 190465 : [32] }}/' \
+              -e 's/{{ 8192 : \[32\] }}/{{ 8191 : [32] }}/' \
+              implementations/rustcrypto-ml-dsa/proof/reduce/reduce.saw \
+              > implementations/rustcrypto-ml-dsa/proof/reduce/reduce_mutated_ci.saw
+          if .tools/bin/saw implementations/rustcrypto-ml-dsa/proof/reduce/reduce_mutated_ci.saw; then
+            echo "::error::Mutated spec verified — the proof is vacuous."; exit 1
+          fi
+          echo "Mutated spec correctly rejected."

@@ -149,10 +149,12 @@ cd ../build && ln -sf aarch64-apple-darwin/debug/deps/mldsa_harness-*.linked-mir
 ## TODO — remaining plan
 - **(a) Commit v2.1 milestone.** DONE (5b9eb74).
 - **(b) v2.2 mod-q reduce.** DONE (this section).
-- **(c) Wire `rust.yml` CI:** a workflow mirroring `saw.yml` that runs `setup_rust.sh`, builds the
-  harness MIR (repo-local path is now deterministic), refreshes the symlink, and runs `saw
-  proof/reduce/reduce.saw`, gated on exit 0. Cache `.tools/rlibs` + the pinned nightly. Verify it is
-  reproducible on a clean macos-15 arm64 runner before treating it as a gate.
+- **(c) `rust.yml` CI: WIRED (2026-06-12), pending first green run on a clean runner.** Mirrors
+  `saw.yml` on macos-15 arm64: setup.sh (SAW) + setup_rust.sh (skipped when the mir-json/nightly/rlibs
+  caches hit), builds the harness MIR repo-locally, refreshes the symlink, runs `saw reduce.saw`, and
+  a non-vacuity guard (mutated moduli must FAIL). Do NOT treat it as a gate (branch protection) until
+  it has proven reproducible on a clean runner — the first cache-miss run builds mir-json + translates
+  stdlibs and will be slow (~tens of minutes).
 - **(d) The focused audit (next verification work):** smells #1 ct_div precision (claim:
   `ct_div(x) == x / M` for all x < Q, for each divisor used), #2 zetas table vs FIPS 204 Appendix B,
   #3 hint encode/decode/use conformance (the GHSA-class target).

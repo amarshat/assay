@@ -1,0 +1,73 @@
+enable_experimental;
+// module_lattice Elem<BaseField> field arithmetic == arithmetic mod q.
+// These are the leaves of the NTT butterflies (and of everything else); they
+// are module_lattice 0.2.3 code, SHARED WITH RustCrypto ml-kem — so these
+// claims cover both crates' field cores (for q = 8380417 here).
+//
+//   neg(a)   = (q - a) mod q          (small_reduce(q - a))
+//   add(a,b) = (a + b) mod q          (small_reduce(a + b), a+b < 2q fits u32)
+//   sub(a,b) = (a - b) mod q          (small_reduce(a + q - b))
+//   mul(a,b) = (a * b) mod q          (u64 product, u128 Barrett, small_reduce)
+//
+// All preconditioned on operands < q (the Elem invariant; module_lattice
+// constructs Elem only via sampling/reduction that maintains it).
+// No CT overrides needed: small_reduce is the branchless mask idiom
+// ((x >= Q) as u32).wrapping_neg(), plain MIR.
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+let bf_adt = mir_find_adt m "ml_dsa::algebra::BaseField" [];
+let elem_adt = mir_find_adt m "module_lattice::algebra::Elem" [mir_adt bf_adt];
+let elem x = mir_struct_value elem_adt [mir_term x];
+
+let q = {{ 8380417 : [64] }};
+
+let unop_spec spec = do {
+    a <- mir_fresh_var "a" mir_u32;
+    mir_precond {{ a < 8380417 }};
+    mir_execute_func [elem a];
+    mir_return (elem (spec a));
+};
+
+let binop_spec spec = do {
+    a <- mir_fresh_var "a" mir_u32;
+    b <- mir_fresh_var "b" mir_u32;
+    mir_precond {{ a < 8380417 }};
+    mir_precond {{ b < 8380417 }};
+    mir_execute_func [elem a, elem b];
+    mir_return (elem (spec a b));
+};
+
+neg_ov <- mir_verify m "module_lattice::algebra::{impl#3}::neg::_instd1dae7dc341bae50" [] false
+    (unop_spec (\a -> {{ drop`{32} ((8380417 - zext a) % 8380417) : [32] }})) z3;
+print "VERIFIED: Elem neg == (q - a) mod q";
+
+add_ov <- mir_verify m "module_lattice::algebra::{impl#4}::add::_instd1dae7dc341bae50" [] false
+    (binop_spec (\a b -> {{ drop`{32} ((zext a + zext b) % 8380417) : [32] }})) z3;
+print "VERIFIED: Elem add == (a + b) mod q";
+
+sub_ov <- mir_verify m "module_lattice::algebra::{impl#5}::sub::_instd1dae7dc341bae50" [] false
+    (binop_spec (\a b -> {{ drop`{32} ((zext a + 8380417 - zext b) % 8380417) : [32] }})) z3;
+print "VERIFIED: Elem sub == (a - b) mod q";
+
+// mul is compositional: the direct goal (symbolic 64-bit product fed through a
+// u128 Barrett) defeats z3/yices/cvc5. Split as in v1:
+//  (1) barrett_reduce(x) == x mod q for ALL x < 2^46 — only constant multiplies,
+//      solver-friendly. (2^46 suffices, not just x < q^2: with the floor
+//      multiplier 8396807 = floor(2^46/q), remainder <= x*e/2^46 + q < 2q for
+//      e = 2^46 - MULT*q < q, so one small_reduce subtraction is enough.)
+//  (2) mul with (1) as an override — the call-site obligation is the width
+//      bound a*b < 2^46 from a,b < q < 2^23, which solvers handle.
+let barrett_spec = do {
+    x <- mir_fresh_var "x" mir_u64;
+    mir_precond {{ x < (1 << 46) }};
+    mir_execute_func [mir_term x];
+    mir_return (mir_term {{ drop`{32} (x % 8380417) : [32] }});
+};
+br_ov <- mir_verify m "ml_dsa::algebra::{impl#6}::barrett_reduce" [] false barrett_spec z3;
+print "VERIFIED: barrett_reduce(x) == x mod q for all x < 2^46";
+
+mul_ov <- mir_verify m "module_lattice::algebra::{impl#6}::mul::_instd1dae7dc341bae50" [br_ov] false
+    (binop_spec (\a b -> {{ drop`{32} ((zext a * zext b) % 8380417) : [32] }})) z3;
+print "VERIFIED: Elem mul == (a * b) mod q";
+
+print "FIELD CORE CONFORMS: module_lattice Elem<BaseField> neg/add/sub/mul == arithmetic mod q (shared with ml-kem)";

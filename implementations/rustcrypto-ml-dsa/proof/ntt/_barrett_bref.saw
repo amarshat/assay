@@ -1,0 +1,39 @@
+// Test: faithful urem-free-ish reference. x mod q (x<2^46) via two carry folds
+// using 2^23 == 8191 (mod q): final urem has tiny quotient (w < 2^27) => fast.
+enable_experimental;
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+let {{
+  qq : [64]
+  qq = 8380417
+  mask23 : [64]
+  mask23 = 0x00000000007fffff
+  brefMod : [64] -> [32]
+  brefMod x = drop`{32} (w % qq)
+    where xH = x >> 23
+          xL = x && mask23
+          y  = xH * 8191 + xL      // < 2^36, y == x (mod q)
+          yH = y >> 23
+          yL = y && mask23
+          w  = yH * 8191 + yL      // < 2^27, w == x (mod q)
+}};
+let spec = do {
+    x <- mir_fresh_var "x" mir_u64;
+    mir_precond {{ x < (1 << 46) }};
+    mir_execute_func [mir_term x];
+    mir_return (mir_term {{ brefMod x }});
+};
+br <- mir_verify m "ml_dsa::algebra::{impl#6}::barrett_reduce" [] false spec z3;
+print "BREF PROBE OK: barrett_reduce(x) == brefMod x for all x < 2^46";
+// rigorously confirm brefMod x == x mod q over full domain WITHOUT a wide urem:
+//   x == (xH + yH)*q + brefMod x  and  brefMod x < q   (mul/add/compare + tiny urem)
+let {{
+  brefOK : [64] -> Bit
+  brefOK x = (x < (1 << 46)) ==> (x == k * qq + zext (brefMod x)) /\ (zext (brefMod x) < qq)
+    where xH = x >> 23
+          xL = x && (0x00000000007fffff : [64])
+          y  = xH * 8191 + xL
+          yH = y >> 23
+          k  = xH + yH
+}};
+prove_print z3 {{ \(x : [64]) -> brefOK x }};
+print "BREF CORRECT: brefMod x == x mod q for all x < 2^46 (carry identity, no wide urem)";

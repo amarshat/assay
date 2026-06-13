@@ -1,0 +1,12 @@
+// TEMP probe (not committed): race solver tactics on the barrett_reduce goal.
+// Tactic is passed via the SAW_PROBE_TACTIC convention by duplicating per file.
+enable_experimental;
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+let barrett_spec = do {
+    x <- mir_fresh_var "x" mir_u64;
+    mir_precond {{ x < (1 << 46) }};
+    mir_execute_func [mir_term x];
+    mir_return (mir_term {{ drop`{32} (x % 8380417) : [32] }});
+};
+br_ov <- mir_verify m "ml_dsa::algebra::{impl#6}::barrett_reduce" [] false barrett_spec TACTIC;
+print "PROBE OK: barrett_reduce(x) == x mod q for all x < 2^46";

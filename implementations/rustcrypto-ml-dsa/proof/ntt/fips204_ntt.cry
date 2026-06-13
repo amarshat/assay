@@ -1,0 +1,71 @@
+/* FIPS 204 NTT layers (Algorithms 41 and 42 loop bodies), transcribed from the
+ * standard. Parameter-set independent: q and the NTT are common to
+ * ML-DSA-44/65/87.
+ *
+ * Algorithm 41 NTT: m = 0; for len in [128,64,..,1]: for each block of size
+ * 2*len: m += 1; z = zeta^BitRev_8(m); for j in block's lower half:
+ *   t = z*w[j+len]; w[j+len] = w[j] - t; w[j] = w[j] + t
+ * Algorithm 42 NTT^-1 mirrors it with m decremented from 256 and z negated:
+ *   t = w[j]; w[j] = t + w[j+len]; w[j+len] = z~ * (t - w[j+len]),
+ *   z~ = -zeta^BitRev_8(m)  (the final scaling by 256^-1 lives OUTSIDE the
+ *   layers, in Algorithm 42's last loop — not part of the per-layer claim).
+ *
+ * One generic layer is parameterized by (len, iterations = 128/len, m0), where
+ * m0 is the value of m BEFORE the layer (the standard's m sequencing makes the
+ * call sites concrete: forward m0 = 0,1,3,7,15,31,63,127; inverse m0 =
+ * 256,128,64,32,16,8,4,2, pre-decremented per block).
+ *
+ * Each butterfly reads only its own disjoint pair (j, j+len) of OLD values, so
+ * a layer is a parallel map over positions — expressed that way here.
+ *
+ * Same encoding discipline as the other spec files: signed/unsigned [64]
+ * arithmetic, exact for these magnitudes; coefficients are u32 field elements
+ * in [0, q).
+ */
+module fips204_ntt where
+
+type W = [64]
+
+q : W
+q = 8380417
+
+// zeta^BitRev_8(k) mod q, zeta = 1753 — the table FIPS 204 Appendix B tabulates
+zetabrv : [256][32]
+zetabrv = [ drop`{32} (pows @ (reverse k)) | k <- [0..255] : [256][8] ]
+  where pows = take`{256} powseq
+        powseq = [1] # [ (p * 1753) % q | p <- powseq ]
+
+// one forward layer (Algorithm 41 body at a given len, iter = 128/len, m0)
+nttLayerFwd : W -> W -> W -> [256][32] -> [256][32]
+nttLayerFwd len iter m0 w = [ f (zext p) | p <- [0..255] : [256][8] ]
+  where
+    wAt : W -> W
+    wAt i = zext (w @ i)
+    f : W -> [32]
+    f p = if blk >= iter then w @ p             // position not touched this layer
+          else if off < len
+          then drop`{32} ((wAt p + t) % q)                 // w[j] = w[j] + t
+          else drop`{32} ((wAt (p - len) + q - tHi) % q)   // w[j+len] = w[j] - t
+      where
+        blk = p / (2 * len)
+        off = p % (2 * len)
+        z   = zext (zetabrv @ (m0 + blk + 1))
+        t   = (z * wAt (p + len)) % q          // for the lower-half position
+        tHi = (z * wAt p) % q                  // same t, seen from the upper half
+
+// one inverse layer (Algorithm 42 body; m pre-decremented from m0 per block)
+nttLayerInv : W -> W -> W -> [256][32] -> [256][32]
+nttLayerInv len iter m0 w = [ f (zext p) | p <- [0..255] : [256][8] ]
+  where
+    wAt : W -> W
+    wAt i = zext (w @ i)
+    f : W -> [32]
+    f p = if blk >= iter then w @ p
+          else if off < len
+          then drop`{32} ((wAt p + wAt (p + len)) % q)       // w[j] = t + w[j+len]
+          else drop`{32} ((z * tHi) % q)                     // w[j+len] = -zeta * (t - w[j+len])
+      where
+        blk = p / (2 * len)
+        off = p % (2 * len)
+        z   = (q - zext (zetabrv @ (m0 - 1 - blk))) % q
+        tHi = (wAt (p - len) + q - wAt p) % q

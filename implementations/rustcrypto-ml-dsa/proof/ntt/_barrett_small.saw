@@ -1,0 +1,12 @@
+// Experiment: same barrett spec, tiny domain x < 2^12. If fast => bottleneck is
+// the symbolic range over [0,2^46) (decomposable); if slow => 128-bit ops.
+enable_experimental;
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+let spec = do {
+    x <- mir_fresh_var "x" mir_u64;
+    mir_precond {{ x < (1 << 12) }};
+    mir_execute_func [mir_term x];
+    mir_return (mir_term {{ drop`{32} (x % 8380417) : [32] }});
+};
+br <- mir_verify m "ml_dsa::algebra::{impl#6}::barrett_reduce" [] false spec z3;
+print "SMALL DOMAIN PROBE OK (x < 2^12)";

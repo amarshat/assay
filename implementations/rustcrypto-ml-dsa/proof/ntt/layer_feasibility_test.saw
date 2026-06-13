@@ -1,0 +1,37 @@
+enable_experimental;
+// Feasibility probe: ONE forward NTT layer (LEN=128, ITERATIONS=1, m: 0 -> 1)
+// against the FIPS 204 Algorithm 41 layer spec. Tests the whole machinery:
+// indexwise Elem array points_to over a symbolic [256][32], the &mut m usize
+// postcondition, and solver tractability of 128 inlined butterflies
+// (mul-by-concrete-zeta makes the Barrett multiplies linear).
+import "fips204_ntt.cry";
+
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+let bf_adt = mir_find_adt m "ml_dsa::algebra::BaseField" [];
+let elem_adt = mir_find_adt m "module_lattice::algebra::Elem" [mir_adt bf_adt];
+
+// concrete index terms 0..255 (computed outside the setup block)
+idxs <- eval_list {{ [0..255] : [256][8] }};
+
+let layer_fwd_spec lenv iterv m0v = do {
+    ws <- mir_fresh_var "w" (mir_array 256 mir_u32);
+    mir_precond {{ all (\c -> c < 8380417) ws }};
+    in_els <- for idxs (\i -> return (mir_struct_value elem_adt [mir_term {{ ws @ i }}]));
+    w_ref <- mir_alloc_mut (mir_array 256 (mir_adt elem_adt));
+    mir_points_to w_ref (mir_array_value (mir_adt elem_adt) in_els);
+
+    m_ref <- mir_alloc_mut mir_usize;
+    mir_points_to m_ref (mir_term m0v);
+
+    mir_execute_func [w_ref, m_ref];
+
+    out_els <- for idxs (\i -> return (mir_struct_value elem_adt
+                  [mir_term {{ (nttLayerFwd lenv iterv m0v ws) @ i }}]));
+    mir_points_to w_ref (mir_array_value (mir_adt elem_adt) out_els);
+    mir_points_to m_ref (mir_term {{ m0v + iterv }});
+};
+
+ov <- mir_verify m "ml_dsa::ntt::ntt_layer::_inst4c08bb177e505583" []
+        false (layer_fwd_spec {{ 128 : [64] }} {{ 1 : [64] }} {{ 0 : [64] }}) z3;
+print "FEASIBLE: ntt_layer<128,1> == FIPS 204 Algorithm 41 layer (m: 0 -> 1)";

@@ -1,0 +1,72 @@
+enable_experimental;
+// ONE forward NTT layer (ntt_layer<128,1>, m: 0 -> 1) == FIPS 204 Alg 41 layer,
+// with barrett_reduce ASSUMED (mir_unsafe_assume_spec) rather than proven.
+//
+// WHY ASSUMED: barrett_reduce == x mod q over x < 2^46 is SMT-intractable
+// (z3/abc/goal_eval all time out; see repro_barrett_2p46.saw + QUESTION.md).
+// This file DECOUPLES the two hard problems: it tests whether the LAYER proof
+// itself is tractable (128 inlined butterflies, [256] Elem array points_to, the
+// &mut m usize postcondition, _inst-name resolution) GIVEN a correct mul. The
+// barrett proof is the separate open item. The assumed spec is the SAME claim
+// the standalone proof targets, so backfilling it later closes the gap with no
+// change here. RECORDED AS ASSUMED in docs/ASSUMPTIONS.md.
+import "fips204_ntt.cry";
+
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+let bf_adt = mir_find_adt m "ml_dsa::algebra::BaseField" [];
+let elem_adt = mir_find_adt m "module_lattice::algebra::Elem" [mir_adt bf_adt];
+
+// --- ASSUMED field ops (NOT proven here) ---
+// Override at the Elem level so the impl-side butterfly becomes pure spec-form
+// (= mod q), making the layer goal structural rather than 128x small_reduce==%q.
+// add/sub/neg are independently SMT-tractable (field_ops.saw, u32, no 2^46
+// blowup) — only barrett(mul) is the open item. All recorded ASSUMED for now.
+let elem x = mir_struct_value elem_adt [mir_term x];
+let unop_spec spec = do {
+    a <- mir_fresh_var "a" mir_u32;
+    mir_precond {{ a < 8380417 }};
+    mir_execute_func [elem a];
+    mir_return (elem (spec a));
+};
+let binop_spec spec = do {
+    a <- mir_fresh_var "a" mir_u32;
+    b <- mir_fresh_var "b" mir_u32;
+    mir_precond {{ a < 8380417 }};
+    mir_precond {{ b < 8380417 }};
+    mir_execute_func [elem a, elem b];
+    mir_return (elem (spec a b));
+};
+neg_ov <- mir_unsafe_assume_spec m "module_lattice::algebra::{impl#3}::neg::_instd1dae7dc341bae50"
+    (unop_spec (\a -> {{ drop`{32} ((8380417 - zext a) % 8380417) : [32] }}));
+add_ov <- mir_unsafe_assume_spec m "module_lattice::algebra::{impl#4}::add::_instd1dae7dc341bae50"
+    (binop_spec (\a b -> {{ drop`{32} ((zext a + zext b) % 8380417) : [32] }}));
+sub_ov <- mir_unsafe_assume_spec m "module_lattice::algebra::{impl#5}::sub::_instd1dae7dc341bae50"
+    (binop_spec (\a b -> {{ drop`{32} ((zext a + 8380417 - zext b) % 8380417) : [32] }}));
+mul_ov <- mir_unsafe_assume_spec m "module_lattice::algebra::{impl#6}::mul::_instd1dae7dc341bae50"
+    (binop_spec (\a b -> {{ drop`{32} ((zext a * zext b) % 8380417) : [32] }}));
+let field_ovs = [neg_ov, add_ov, sub_ov, mul_ov];
+
+idxs <- eval_list {{ [0..255] : [256][8] }};
+
+let layer_fwd_spec lenv iterv m0v = do {
+    ws <- mir_fresh_var "w" (mir_array 256 mir_u32);
+    mir_precond {{ all (\c -> c < 8380417) ws }};
+    in_els <- for idxs (\i -> return (mir_struct_value elem_adt [mir_term {{ ws @ i }}]));
+    w_ref <- mir_alloc_mut (mir_array 256 (mir_adt elem_adt));
+    mir_points_to w_ref (mir_array_value (mir_adt elem_adt) in_els);
+
+    m_ref <- mir_alloc_mut mir_usize;
+    mir_points_to m_ref (mir_term m0v);
+
+    mir_execute_func [w_ref, m_ref];
+
+    out_els <- for idxs (\i -> return (mir_struct_value elem_adt
+                  [mir_term {{ (nttLayerFwd lenv iterv m0v ws) @ i }}]));
+    mir_points_to w_ref (mir_array_value (mir_adt elem_adt) out_els);
+    mir_points_to m_ref (mir_term {{ m0v + iterv }});
+};
+
+ov <- mir_verify m "ml_dsa::ntt::ntt_layer::_inst4c08bb177e505583" field_ovs
+        false (layer_fwd_spec {{ 128 : [64] }} {{ 1 : [64] }} {{ 0 : [64] }}) z3;
+print "LAYER OK (barrett ASSUMED): ntt_layer<128,1> == FIPS 204 Alg 41 (m: 0 -> 1)";

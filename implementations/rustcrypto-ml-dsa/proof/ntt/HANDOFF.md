@@ -107,6 +107,29 @@ Isabelle as v1 did. Everything downstream (field_ops mul, layers) waits on this.
 Note: the EXISTING verified barrett (commit d9414f9, proof/reduce/) is over u32
 (x < 2^32) — tractable. The NTT need is the WIDER u64/2^46 domain. Different goal.
 
+## BLOCKER 2 (2026-06-13): layer goal intractable even with field ops ASSUMED
+
+`layer_assumed_barrett.saw` decouples the barrett problem: it assumes Elem
+neg/add/sub/mul (mir_unsafe_assume_spec, each == mod q) and tries to verify
+`ntt_layer<128,1>` == `nttLayerFwd`. Result: overrides all apply, symbolic
+simulation COMPLETES, but the layer proof goal TIMES OUT (124 @ 8 min) at
+"Checking proof obligations" — z3, with AND without barrett-only vs all-ops.
+
+Cause (hypothesis): `nttLayerFwd` (fips204_ntt.cry) inlines `(...) % 8380417`
+per position → 256 output elements each a urem-by-constant over `[64]`. urem
+bitblasts heavy (same family as barrett's `>>46`), x256. And the one-shot `%q`
+per element doesn't structurally match the impl's reduce-after-each-op, so z3
+can't term-match the two sides — it bitblasts all 256. Same root disease as
+BLOCKER 1: wide modular reduction at bitvector width.
+
+NEXT EXPERIMENT (untried): **compositional spec.** Rewrite `nttLayerFwd` to be
+BUILT FROM the assumed op-spec forms (the butterfly = the same `sub`/`add`/`mul`
+spec terms), so impl-side and spec-side are the SAME term and z3 discharges by
+rewriting/equality instead of bitblasting urem. If that still stalls, drop to
+ONE butterfly (LEN=128 has 128; verify a single (j,j+len) pair) to confirm the
+machinery, then scale. Also consider `goal_num_ite`/`simplify` with a urem
+rewrite, or proving the layer in Integer-bridge form like the barrett route.
+
 ## Definition of done for this task
 
 1. `field_ops.saw` exits 0 (field core conforms).

@@ -53,6 +53,16 @@ Reading it as: bitblasting `(x * 8396807) >> 46` — a ~92-bit product, divided 
 
 Minimal repro: `repro_barrett_2p46.saw` (single `mir_verify`, the timeout above).
 
+**Related, same disease:** verifying one NTT layer (`ntt_layer<128,1>` ==
+a FIPS 204 Alg 41 spec) with ALL field ops (neg/add/sub/mul == mod q) assumed
+via `mir_unsafe_assume_spec` — overrides apply, simulation completes, but the
+layer goal times out at "Checking proof obligations". The spec computes
+`(...) % q` per output coefficient (256 of them, `[64]` urem-by-constant), and
+those don't term-match the impl's reduce-after-each-op, so z3 bitblasts all 256.
+Is the right move to write the spec compositionally from the same override terms
+so it discharges by rewriting, or is there a SAW idiom for "many independent
+modular-reduction obligations" (a urem-by-constant rewrite / simp set)?
+
 Context: open formal-verification project on RustCrypto ML-DSA; scalar layer
 (Barrett over u32, ct_div, zetas, hint layer) already SAW-verified. This wider
 Barrett is the gate for the NTT-layer (FIPS 204 Alg 41/42) proofs.

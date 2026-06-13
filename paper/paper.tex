@@ -263,7 +263,7 @@ narrow-domain Barrett reduction over \code{u32} inputs, used elsewhere in ML-DSA
 (Section~\ref{sec:rust}); the difference is the domain width alone.
 
 \paragraph{The structural cause.} The decisive subterm is $(x \cdot M) \gg 46$: a wide product, here up
-to roughly $2^{70}$, divided by a power of two, over a symbolic input ranging across $2^{46}$ values.
+to roughly $2^{69}$, divided by a power of two, over a symbolic input ranging across $2^{46}$ values.
 Bit-blasting this division-of-a-wide-product to a SAT instance is exponential in the operative width, and
 no choice of back-end solver changes the shape of the instance. The boundary is therefore a property of
 the goal, and it is predictable: it appears wherever a wide-domain $(x \cdot M) \gg k$ must be related to

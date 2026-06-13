@@ -85,6 +85,28 @@ may be slow or the `_inst` name may not match (see below).
   Cryptol `Integer` with bitvectors makes z3 stall forever on `mir_verify`
   goals (documented v2 gotcha).
 
+## BLOCKER (2026-06-13): 2^46 Barrett NOT directly SMT-provable
+
+The `mul` override needs `barrett_reduce(x) == x mod q` over **x < 2^46** (the
+a*b product domain, a,b < q < 2^23). Tested this session, all TIMED OUT:
+- z3 on direct `x % q`: fast for x < 2^28 (~4s), STALLS at 2^36, 2^44 (killed).
+- abc on full 2^46: timeout 124 at 9 min.
+- `_barrett_bref.saw` (carry-fold spec, no wide urem): timeout 124 at 8 min —
+  doesn't help, because `mir_verify` still compares against the IMPL, which does
+  `(x * M) >> 46` on a ~92-bit u128 product (M = 8396807, SHIFT = 46). The `>>46`
+  of a wide product is the bitblast bomb; reformulating the SPEC can't remove it.
+- Only solvers bundled in `.tools/bin`: abc cvc4 cvc5 yices z3. No bitwuzla.
+
+Conclusion: structural, not solver choice. Direct bitvector proof over 2^46 is
+out. **Next route (real work, not a probe):** prove the Barrett identity
+`x - ((x*M)>>46)*q ≡ x (mod q)  /\  ∈ [0,2q)` in UNBOUNDED Integer arithmetic
+(z3 nonlinear, no bitblast) + a BV<->Integer bridge — same shape as v1
+montgomery_reduce. Either SAW with an explicit quotient witness, or lift to
+Isabelle as v1 did. Everything downstream (field_ops mul, layers) waits on this.
+
+Note: the EXISTING verified barrett (commit d9414f9, proof/reduce/) is over u32
+(x < 2^32) — tractable. The NTT need is the WIDER u64/2^46 domain. Different goal.
+
 ## Definition of done for this task
 
 1. `field_ops.saw` exits 0 (field core conforms).

@@ -1,0 +1,26 @@
+// MINIMAL REPRO — barrett_reduce over x < 2^46 times out (z3, abc).
+// Goal: barrett_reduce(x) == x mod q for all u64 x < 2^46, q = 8380417.
+// Impl (module_lattice 0.2.3 algebra.rs): x:u128; product = x * 8396807;
+//   quotient = product >> 46; remainder = x - quotient*q; small_reduce(trunc32).
+// The >>46 of a ~92-bit product over a 2^46 input domain is the bitblast bomb.
+// z3: fast <2^28, stalls >=2^36. abc: timeout 9min. Reproduce with this one file.
+//
+// Run: saw repro_barrett_2p46.saw   (needs build/mldsa_harness.linked-mir.json)
+enable_experimental;
+m <- mir_load_module "../../build/mldsa_harness.linked-mir.json";
+
+let barrett_spec = do {
+    x <- mir_fresh_var "x" mir_u64;
+    mir_precond {{ x < (1 << 34) }};
+    mir_execute_func [mir_term x];
+    mir_return (mir_term {{ drop`{32} (x % 8380417) : [32] }});
+};
+
+// TACTIC UNDER TEST — swap the last arg to race idioms:
+//   z3                         (baseline, times out >=2^36)
+//   abc                        (times out 9min)
+//   yices                      (untested to completion)
+//   do { goal_eval_unint []; z3; }   (concretize/rewrite, then z3)
+barrett_ov <- mir_verify m "ml_dsa::algebra::{impl#6}::barrett_reduce" [] false
+    barrett_spec (do { goal_eval_unint []; z3; });
+print "REPRO RESULT: barrett_reduce(x) == x mod q proven for all x < 2^46";

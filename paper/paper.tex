@@ -20,7 +20,7 @@
        A Cross-Toolchain Tractability Study of ML-DSA}
 
 % TODO(author): confirm name / affiliation / contact before submission.
-\author{Amar Akshat\\\texttt{amar.akshat@gmail.com}}
+\author{Amar Akshat\\Independent Researcher\\\texttt{amar.akshat@gmail.com}}
 \date{\today}
 
 \begin{document}
@@ -29,10 +29,11 @@
 \begin{abstract}
 Machine-checked equivalence between a cryptographic implementation and its specification is only
 useful if the proof actually discharges. For the modular arithmetic at the core of ML-DSA
-(FIPS~204)~\cite{fips204} we find that whether it discharges depends sharply, and predictably, on the
+(FIPS~204)~\cite{fips204} we find that whether it discharges depends steeply, and measurably, on the
 input domain --- and we map where the boundary lies, why it is there, and how to cross it. We verify
-reduction primitives and the forward number-theoretic transform (NTT) of two independent, deployed
-ML-DSA codebases: the PQClean / pq-crystals C reference, via SAW, Cryptol, and Isabelle/HOL composed
+reduction primitives and the forward number-theoretic transform (NTT) of two independent ML-DSA
+implementations --- a reference and a library: the PQClean / pq-crystals C reference, via SAW, Cryptol,
+and Isabelle/HOL composed
 through the \code{cryptol-to-isabelle} translator into a single chain from C to a FIPS-derived
 specification; and the RustCrypto implementation, via SAW over MIR. On the C side we obtain end-to-end
 correctness for the \code{reduce.c} layer (\code{montgomery\_reduce}, \code{reduce32}, \code{caddq},
@@ -41,10 +42,12 @@ we obtain SAW-verified equivalence for Barrett reduction, constant-time division
 table, and the hint layer (Algorithms 36, 37, 39, 40). Against these positive results we report the
 boundary: narrow-domain reductions discharge in seconds, while wide-domain Barrett reduction over the
 full product domain $x < 2^{46}$, and a single NTT layer, fail to complete across six solver and tactic
-configurations. We give the structural cause --- bit-blasting $(x \cdot M) \gg k$ over a wide symbolic
-domain --- and three constructive escapes that do discharge: a total-coefficient-invariant induction
-that replaces a $\sim$3000-obligation SAW unrolling with an eight-step proof running in seconds, an
-unbounded-integer reformulation with a bitvector bridge, and compositional overrides. We also report
+configurations. We give the structural cause --- the bit-vector formula for $(x \cdot M) \gg k$
+becomes intractable for current solvers as the live input width grows --- and three proof
+restructurings that target it. One we carry to completion: a total-coefficient-invariant induction that
+replaces a $\sim$3000-obligation SAW unrolling with an eight-step proof running in seconds. Two we
+identify as the route past the remaining walls: an unbounded-integer reformulation with a bitvector
+bridge, and a compositional specification. We also report
 two off-by-one defects in the reference's documented contracts, disclosed upstream. The development uses
 no vendor verification artifacts and is reproducible with a single command.
 \end{abstract}
@@ -84,15 +87,17 @@ boundary and anchor the study.
   proves in about four seconds, while the same goal over the cryptographically relevant wide domain
   ($x < 2^{46}$) does not complete under \code{z3}, \code{abc}, \code{cvc5}, \code{yices}, a
   \code{goal\_eval} rewrite pass, or a carry-fold reformulation.
-  \item \textbf{The structural cause.} The wall is bit-blasting of $(x \cdot M) \gg k$ --- a wide
-  product divided by a power of two --- over a wide symbolic input domain, the shape that recurs in
-  Barrett reduction and, 256-fold, in one NTT layer (Section~\ref{sec:boundary}). This predicts the
-  boundary rather than merely observing it.
-  \item \textbf{Three constructive escapes that discharge.} A total-coefficient invariant turns an
+  \item \textbf{The structural cause.} The wall is the bit-vector formula for $(x \cdot M) \gg k$ ---
+  a constant multiply and a power-of-two shift related to $x \bmod Q$ --- which becomes intractable for
+  current solvers as the live input width grows; the same shape recurs in Barrett reduction and,
+  256-fold, in one NTT layer (Section~\ref{sec:boundary}). This locates the boundary in the goal shape
+  and lets us account for where it falls.
+  \item \textbf{One completed escape, and two identified.} A total-coefficient invariant turns an
   intractable $\sim$3000-obligation SAW unrolling of NTT overflow-freedom into an eight-step Isabelle
-  induction running in seconds (Section~\ref{sec:ntt}); an unbounded-integer reformulation with a
-  bitvector bridge handles the reductions; compositional overrides handle the layer proofs
-  (Sections~\ref{sec:reduce} and~\ref{sec:boundary}).
+  induction running in seconds (Section~\ref{sec:ntt}); this escape we carry to completion. Two further
+  restructurings --- an unbounded-integer reformulation with a bitvector bridge for the reductions, and
+  a compositional specification for the layer proof --- we identify as the route past the remaining
+  walls but do not mechanize here (Section~\ref{sec:boundary}).
   \item \textbf{A cross-toolchain, cross-language study.} The same primitives are verified in two
   pipelines --- SAW+Cryptol+Isabelle on the C reference (Section~\ref{sec:reduce}) and SAW over MIR on
   the RustCrypto implementation (Section~\ref{sec:rust}). We are not aware of a prior side-by-side
@@ -179,7 +184,7 @@ lifted model meets it, with no \code{sorry} or \code{oops}.
   \item \code{freeze}: residue-preserving, with output in $[0, Q)$, proven from the previous two.
 \end{itemize}
 Composing with the SAW leg gives a statement from C to specification: on the documented ranges, each
-deployed reference function computes a correct residue modulo $Q$ within its proven output window. The
+reference function computes a correct residue modulo $Q$ within its proven output window. The
 windows above are the \emph{true reachable} windows, which differ from the documented ones for two
 functions (Section~\ref{sec:findings}). This layer sits entirely on the tractable side of the boundary:
 the inputs are single machine words and the goals discharge in seconds.
@@ -187,8 +192,9 @@ the inputs are single machine words and the goals discharge in seconds.
 \section{The RustCrypto layer (Rust)}\label{sec:rust}
 
 The RustCrypto pipeline reaches the same primitives in a different language and toolchain, and the same
-narrow-domain goals discharge. All results below are SAW-verified against a Cryptol specification and
-checked for non-vacuity by a mutation test (a deliberately altered modulus or constant is rejected).
+narrow-domain goals discharge. All results below are SAW-verified against a Cryptol specification; the
+reduction proofs additionally carry a mutation test in continuous integration --- a deliberately altered
+modulus is rejected --- so they are not vacuously true.
 \begin{itemize}
   \item \textbf{Barrett reduction} $== x \bmod M$ for all \code{u32} inputs, for each of the three moduli
   that occur ($Q = 8380417$, $2\gamma_2 = 190464$, and $2^d = 8192$), with the conditional final
@@ -226,8 +232,9 @@ Cryptol index operation is strict, but an out-of-bounds access returns the last 
 We therefore state the coefficient bound over \emph{all} indices, not only the valid ones. Every indexed
 access is then a bounded list member, in-bounds or not, so the proof never reasons about the modular
 index arithmetic of the butterfly network --- shifts and divisions parameterized by the level, the exact
-arithmetic that made the direct SMT approach intractable (Section~\ref{sec:boundary}). This is the first
-of the three escapes: a change of proof structure, not of solver, turns an intractable goal tractable.
+arithmetic that made the direct SMT approach intractable (Section~\ref{sec:boundary}). This is the one
+restructuring we carry to completion: a change of proof structure, not of solver, turns an intractable
+goal tractable.
 
 \paragraph{From the model to the C.} The Isabelle result is about the model. SAW proves the C equal to
 the model for all inputs on the \code{-fwrapv} build; the Isabelle result shows the model does not wrap
@@ -239,35 +246,48 @@ explicitly rather than mechanize it as one SAW theorem, because the direct attem
 \section{The tractability boundary}\label{sec:boundary}
 
 The reduction layer and the field, division, and hint layers above all discharge in seconds. The
-transform layer does not, and the failure is sharp and reproducible.
+transform layer does not, and the transition is steep, measurable, and reproducible.
 
 \paragraph{Wide-domain Barrett.} RustCrypto's Barrett reduction computes, in \code{u128},
 $\code{product} = x \cdot M$ with $M = \lfloor 2^{46}/Q \rfloor = 8396807$, $\code{quotient} =
 \code{product} \gg 46$, $\code{remainder} = x - \code{quotient} \cdot Q$, then a conditional subtraction.
 The field multiplication that feeds it produces $x = a \cdot b$ with $a, b < Q < 2^{23}$, so the relevant
-input domain is $x < 2^{46}$. Verifying $\code{barrett\_reduce}(x) == x \bmod Q$ against this domain
-scales as follows:
+input domain is $x < 2^{46}$. We verify $\code{barrett\_reduce}(x) == x \bmod Q$ against an increasing
+input bound (z3, single thread, Apple M4, 16\,GB, 300\,s timeout):
 \begin{center}
 \begin{tabular}{ll}
-$x < 2^{20}$ & proves, $\sim$4\,s (z3) \\
-$x < 2^{28}$ & proves, $\sim$4\,s (z3) \\
-$x < 2^{36}$ & no completion \\
-$x < 2^{44}$ & no completion \\
-$x < 2^{46}$ & no completion \\
+\hline
+input bound & wall-clock (z3) \\
+\hline
+$x < 2^{20}$ & 3.7\,s \\
+$x < 2^{28}$ & 4.1\,s \\
+$x < 2^{30}$ & 7.3\,s \\
+$x < 2^{32}$ & 27.9\,s \\
+$x < 2^{34}$ & 183.6\,s \\
+$x < 2^{36}$ & $>300$\,s (no completion) \\
+$x < 2^{44},\, 2^{46}$ & $>300$\,s (no completion) \\
+\hline
 \end{tabular}
 \end{center}
-At $x < 2^{46}$ the goal did not complete under any of six configurations: \code{z3}, \code{abc},
-\code{cvc5}, \code{yices}, a \code{goal\_eval} rewrite pass before \code{z3}, and a hand-written
-carry-fold reformulation of the specification (each run to a multi-minute timeout). The corresponding
-narrow-domain Barrett reduction over \code{u32} inputs, used elsewhere in ML-DSA, proves without trouble
-(Section~\ref{sec:rust}); the difference is the domain width alone.
+Solve time is flat up to about $2^{28}$ and then grows by roughly a factor of six per two added bits
+($7.3 \to 27.9 \to 183.6$\,s), crossing the timeout between $2^{34}$ and $2^{36}$ --- exponential in the
+live input width, not in the modulus or the formula size. At $x < 2^{46}$ the goal also failed to
+complete under \code{abc}, \code{cvc5}, \code{yices}, a \code{goal\_eval} rewrite pass before \code{z3},
+and a hand-written carry-fold reformulation of the specification (six configurations in all, each to the
+same 300\,s timeout). The corresponding narrow-domain Barrett reduction over \code{u32} inputs, used
+elsewhere in ML-DSA, proves in seconds (Section~\ref{sec:rust}); the difference is the live input width
+alone.
 
-\paragraph{The structural cause.} The decisive subterm is $(x \cdot M) \gg 46$: a wide product, here up
-to roughly $2^{69}$, divided by a power of two, over a symbolic input ranging across $2^{46}$ values.
-Bit-blasting this division-of-a-wide-product to a SAT instance is exponential in the operative width, and
-no choice of back-end solver changes the shape of the instance. The boundary is therefore a property of
-the goal, and it is predictable: it appears wherever a wide-domain $(x \cdot M) \gg k$ must be related to
-$x \bmod Q$ at bit-vector width.
+\paragraph{The structural cause.} The decisive subterm is $(x \cdot M) \gg 46$: a product up to roughly
+$2^{69}$ divided by a power of two and related back to $x \bmod Q$. The bit-vector \emph{formula} is not
+itself large --- $M$ is a constant, so the multiply and shift are polynomial in width --- but the SAT
+instance the solver must decide grows with the number of live input bits. When the precondition pins $x$
+to a narrow range the high-order bits of the product are forced to zero and the instance collapses; over
+the full $2^{46}$ domain none of those bits are fixed, and the instance becomes intractable for every
+back-end we tried. The boundary is therefore a property of the goal, not the solver: it appears wherever
+a wide-domain $(x \cdot M) \gg k$ must be related to $x \bmod Q$ at bit-vector width, and it falls where
+the live input width stops collapsing the instance --- here between $2^{34}$ and $2^{36}$, with solve
+time growing exponentially in that width.
 
 \paragraph{The NTT layer, same cause $\times 256$.} The same shape recurs in the transform. We attempted
 one forward NTT layer (\code{ntt\_layer} with $\mathrm{LEN}=128$) against a FIPS~204 Algorithm~41 layer
@@ -344,19 +364,22 @@ second toolchain over Rust MIR, and centers the tractability boundary rather tha
 implementation. Deployed implementations in OpenSSL, BoringSSL, and AWS-LC, and the \code{mldsa-native}
 assembly, are verified by other toolchains such as CBMC and HOL-Light. A recent audit of reduction
 placement in production ML-DSA~\cite{eprint1032} reports missing-reduction and overflow defects that
-escaped test vectors, the defect class our overflow-freedom property targets. The difficulty of
-discharging SMT obligations for nonlinear and wide modular arithmetic is well known in the
-high-assurance-cryptography literature; our contribution is to characterize it concretely for ML-DSA's
-reduction kernels, across two toolchains, with the structural cause and the escapes made explicit.
+escaped test vectors, the defect class our overflow-freedom property targets. That SMT
+obligations for wide modular arithmetic can be hard to discharge is part of verification practice; what
+has not been done, to our knowledge, is to measure where the boundary falls for a specific standardized
+primitive, show it is a property of the goal rather than the toolchain by reproducing it across two of
+them, and pair the measurement with a completed escape and two identified ones. That measurement and
+those escapes are the contribution.
 
 \section{Conclusion}\label{sec:conclusion}
 
-Whether a machine-checked equivalence proof for ML-DSA's modular arithmetic discharges depends, sharply
-and predictably, on the input domain. We verified the reduction layer of the C reference end to end, a
+Whether a machine-checked equivalence proof for ML-DSA's modular arithmetic discharges depends, steeply
+and measurably, on the input domain. We verified the reduction layer of the C reference end to end, a
 field, division, twiddle-table, and hint layer of the RustCrypto implementation, and an overflow-freedom
 bound for the forward-NTT model; and we mapped the boundary where the transform layer ceases to be
-tractable, identified its structural cause, and gave three proof restructurings that cross it. The same
-boundary appears in both toolchains, which locates it in the goal rather than the tool. Mechanizing the
+tractable, measured its steep onset, identified its structural cause, and gave one proof restructuring
+that crosses it together with two more that we identify but do not yet mechanize. The same boundary
+appears in both toolchains, which locates it in the goal rather than the tool. Mechanizing the
 transform layer through the unbounded-integer and compositional escapes, and repointing the pipelines at
 the deployed optimized arithmetic, are the natural next steps.
 

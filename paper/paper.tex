@@ -10,6 +10,8 @@
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
 \usepackage{xcolor}
 \usepackage{listings}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
 \lstset{basicstyle=\ttfamily\small,breaklines=true,columns=fullflexible,frame=single,
         framesep=4pt,xleftmargin=4pt}
 
@@ -138,19 +140,40 @@ All tool versions are pinned (Section~\ref{sec:repro}).
 
 \begin{figure}[h]
 \centering
-\begin{lstlisting}[frame=none]
-  C reference                         RustCrypto (Rust)
-      |  hand-translate                    |  mir-json
-      v                                     v
-  Cryptol model --SAW: C == Cryptol-->   MIR  --SAW: Rust == Cryptol-->  proven
-      |  cryptol-to-isabelle
-      v
-  Isabelle model --model == FIPS spec--> proven (reduce.c layer)
-\end{lstlisting}
-\caption{Two pipelines over the same primitives. The C pipeline composes a SAW leg and an Isabelle leg
-through \code{cryptol-to-isabelle}, giving a chain from C to a FIPS-derived specification. The Rust
-pipeline verifies MIR directly against Cryptol with SAW. Both meet the same tractability boundary
-(Section~\ref{sec:boundary}).}
+\begin{tikzpicture}[
+  font=\small,
+  node distance=9mm and 22mm,
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=4pt, minimum width=26mm},
+  proven/.style={box, fill=black!5},
+  step/.style={-{Latex[length=2mm]}, thick},
+  lbl/.style={font=\scriptsize, midway, fill=white, inner sep=1.5pt}
+]
+  % C pipeline (left column)
+  \node[box] (cref) {C reference\\\scriptsize\code{reduce.c}, \code{ntt.c}};
+  \node[box, below=of cref] (cmod) {Cryptol model};
+  \node[box, below=of cmod] (imod) {Isabelle model};
+  \node[proven, below=of imod] (cspec) {FIPS 204 spec\\\scriptsize(C $\equiv$ spec, proven)};
+  \draw[step] (cref) -- node[lbl, right] {hand-translate \;/\; SAW: C $\equiv$ Cryptol} (cmod);
+  \draw[step] (cmod) -- node[lbl, right] {\code{cryptol-to-isabelle}} (imod);
+  \draw[step] (imod) -- node[lbl, right] {Isabelle: model $\equiv$ FIPS} (cspec);
+
+  % Rust pipeline (right column)
+  \node[box, right=42mm of cref] (rcrate) {RustCrypto crate\\\scriptsize(Rust)};
+  \node[box, below=of rcrate] (mir) {MIR};
+  \node[proven, below=of mir] (rspec) {Cryptol spec\\\scriptsize(Rust $\equiv$ spec, proven)};
+  \draw[step] (rcrate) -- node[lbl, right] {\code{mir-json}} (mir);
+  \draw[step] (mir) -- node[lbl, right] {SAW: Rust $\equiv$ Cryptol} (rspec);
+
+  % boundary band
+  \begin{scope}[on background layer]
+    \node[draw, dashed, rounded corners, fill=black!3, fit=(cspec)(rspec),
+          inner sep=6mm, label={[font=\scriptsize]below:tractability boundary (\S\ref{sec:boundary}): wide-domain reductions \& the NTT layer sit beyond it}] {};
+  \end{scope}
+\end{tikzpicture}
+\caption{Two pipelines over the same primitives. The C pipeline composes a SAW leg (C $\equiv$ Cryptol)
+and an Isabelle leg (model $\equiv$ FIPS), connected by \code{cryptol-to-isabelle}, into a single chain
+from C to a FIPS-derived specification. The Rust pipeline verifies MIR directly against Cryptol with SAW.
+Both reach the same tractability boundary (Section~\ref{sec:boundary}).}
 \label{fig:pipeline}
 \end{figure}
 

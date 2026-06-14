@@ -41,8 +41,8 @@ correctness for the \code{reduce.c} layer (\code{montgomery\_reduce}, \code{redu
 we obtain SAW-verified equivalence for Barrett reduction, constant-time division, the twiddle-factor
 table, and the hint layer (Algorithms 36, 37, 39, 40). Against these positive results we report the
 boundary: narrow-domain reductions discharge in seconds, while wide-domain Barrett reduction over the
-full product domain $x < 2^{46}$, and a single NTT layer, fail to complete across six solver and tactic
-configurations. We give the structural cause --- the bit-vector formula for $(x \cdot M) \gg k$
+full product domain $x < 2^{46}$ fails to complete across six solver and tactic configurations, and a
+single NTT layer fails likewise. We give the structural cause --- the bit-vector formula for $(x \cdot M) \gg k$
 becomes intractable for current solvers as the live input width grows --- and three proof
 restructurings that target it. One we carry to completion: a total-coefficient-invariant induction that
 replaces a $\sim$3000-obligation SAW unrolling with an eight-step proof running in seconds. Two we
@@ -72,7 +72,7 @@ range. This is folklore among verification engineers, but it is rarely character
 boundary sits, \emph{why}, and \emph{what to do instead} are usually left implicit.
 
 This paper maps that boundary for ML-DSA's modular arithmetic, concretely and reproducibly, across two
-deployed implementations and two verification toolchains. We treat the cases that do not discharge not
+independent implementations and two verification toolchains. We treat the cases that do not discharge not
 as failures to hide but as the primary result: a characterized tractability boundary, its structural
 cause, and the proof restructurings that cross it. The positive verification results --- a complete
 reduction layer and an overflow-freedom bound on the C side, and a verified field, division,
@@ -269,9 +269,9 @@ $x < 2^{44},\, 2^{46}$ & $>300$\,s (no completion) \\
 \hline
 \end{tabular}
 \end{center}
-Solve time is flat up to about $2^{28}$ and then grows by roughly a factor of six per two added bits
-($7.3 \to 27.9 \to 183.6$\,s), crossing the timeout between $2^{34}$ and $2^{36}$ --- exponential in the
-live input width, not in the modulus or the formula size. At $x < 2^{46}$ the goal also failed to
+Solve time is flat up to about $2^{28}$ and then grows by a factor of roughly four to seven per two
+added bits ($7.3 \to 27.9 \to 183.6$\,s), crossing the timeout between $2^{34}$ and $2^{36}$ ---
+exponential in the live input width, not in the modulus or the formula size. At $x < 2^{46}$ the goal also failed to
 complete under \code{abc}, \code{cvc5}, \code{yices}, a \code{goal\_eval} rewrite pass before \code{z3},
 and a hand-written carry-fold reformulation of the specification (six configurations in all, each to the
 same 300\,s timeout). The corresponding narrow-domain Barrett reduction over \code{u32} inputs, used
